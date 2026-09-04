@@ -20,14 +20,15 @@ config file — see [Architecture](docs/architecture.md).
 ## Quick start
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 Run the whole pipeline with **no models to download** — this works immediately:
 
 ```bash
-.venv/bin/python -m livesub run --config config/mock.toml
+python -m livesub run --config config/mock.toml
 ```
 
 ### For the real thing: Ollama (the portable default)
@@ -38,8 +39,8 @@ Windows, NVIDIA, AMD, and CPU, still local, no API key, nothing leaves the machi
 
 ```bash
 ollama pull qwen3.5:4b                        # server side (outside the venv)
-.venv/bin/pip install -r requirements-cpu.txt # faster-whisper + the Ollama client
-.venv/bin/python -m livesub run --config config/default.toml
+pip install -r requirements-cpu.txt # faster-whisper + the Ollama client
+python -m livesub run --config config/default.toml
 ```
 
 First run downloads ~0.5 GB (Whisper small.en) into `~/.cache/huggingface`. The Ollama
@@ -52,8 +53,8 @@ Same architecture, Metal-accelerated models running in-process, measured faster 
 (see docs/architecture.md):
 
 ```bash
-.venv/bin/pip install -r requirements-mlx.txt
-.venv/bin/python -m livesub run --config config/mlx.toml
+pip install -r requirements-mlx.txt
+python -m livesub run --config config/mlx.toml
 ```
 
 First run downloads ~2.3 GB (Qwen3-4B 4-bit) alongside the Whisper weights above.
@@ -70,10 +71,44 @@ The terminal needs microphone access: **System Settings → Privacy & Security �
 Microphone**. Check it is working before anything else:
 
 ```bash
-.venv/bin/python -m livesub.input level --seconds 5
+python -m livesub.input level --seconds 5
 ```
 
 A bar that never moves means the permission was not granted to *this* terminal app.
+
+### On Windows
+
+**Activation syntax.**:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+In `cmd.exe` it is `.venv\Scripts\activate.bat`. 
+
+**System audio (loopback).** There is no Background Music/BlackHole equivalent installed
+by default. ffmpeg 6.1 or newer can capture speaker output directly through the WASAPI
+loopback mode of its `dshow` input — find your output device name under *Settings →
+Sound → More sound settings → Playback*, then point the ffmpeg source at it via config
+(the `extra_args` option reaches raw ffmpeg arguments):
+
+```toml
+[[node]]
+name        = "input"
+impl        = "ffmpeg"
+out         = "audio.raw"
+url         = "audio=Speakers (Realtek High Definition Audio)"
+extra_args  = ["-f", "dshow", "-wasapi_loopback", "1"]
+```
+
+```powershell
+python -m livesub run -c config/video.toml
+```
+
+ffmpeg itself can be installed with `winget install ffmpeg` if it is not already on
+`PATH`.
 
 ---
 
@@ -84,12 +119,12 @@ changes:
 
 ```bash
 # a video or audio file, or a stream URL (HLS/RTSP/HTTP)
-.venv/bin/python -m livesub run -c config/video.toml --source lecture.mp4
-.venv/bin/python -m livesub run -c config/video.toml --source https://example.com/live.m3u8
+python -m livesub run -c config/video.toml --source lecture.mp4
+python -m livesub run -c config/video.toml --source https://example.com/live.m3u8
 
 # system audio — captions a Zoom call or a video playing on this Mac
-.venv/bin/python -m livesub devices
-.venv/bin/python -m livesub run -c config/video.toml --source "Background Music" --device
+python -m livesub devices
+python -m livesub run -c config/video.toml --source "Background Music" --device
 ```
 
 System audio needs a virtual loopback device. **Background Music** (free, already
@@ -103,7 +138,7 @@ appears in `livesub devices` and is selected by name.
 Play a lecture aloud and caption it in the terminal at the same time:
 
 ```bash
-.venv/bin/python -m livesub demo --in lecture.mp3 --target vi --start 240 --seconds 90
+python -m livesub demo --in lecture.mp3 --target vi --start 240 --seconds 90
 ```
 
 English appears in about a second on the Apple Silicon wiring (a little longer on the
@@ -140,22 +175,22 @@ Each preset is a different architecture. Nothing in the Python differs between t
 | `config/mock.toml` | No models at all. Used by CI. |
 
 ```bash
-.venv/bin/python -m livesub run -c config/bilingual.toml
-.venv/bin/python -m livesub run -c config/no_correct.toml --target zh
+python -m livesub run -c config/bilingual.toml
+python -m livesub run -c config/no_correct.toml --target zh
 ```
 
 Inspect a wiring without opening a device or loading a model:
 
 ```bash
-.venv/bin/python -m livesub graph -c config/default.toml
-.venv/bin/python -m livesub graph -c config/default.toml --mermaid   # diagram for the report
+python -m livesub graph -c config/default.toml
+python -m livesub graph -c config/default.toml --mermaid   # diagram for the report
 ```
 
 There is also a shorthand where **omitting a stage name skips that stage**:
 
 ```bash
-.venv/bin/python -m livesub run --chain mic,segment,asr,correct,translate --target vi
-.venv/bin/python -m livesub run --chain mic,segment,asr,translate --target vi   # no correct
+python -m livesub run --chain mic,segment,asr,correct,translate --target vi
+python -m livesub run --chain mic,segment,asr,translate --target vi   # no correct
 ```
 
 ---
@@ -232,11 +267,11 @@ The pipeline serves every subtitle event over a WebSocket (`ws://localhost:8765`
 
 ```bash
 # word error rate + latency, on a fixture so two configs are comparable
-.venv/bin/python -m livesub bench -c config/default.toml \
+python -m livesub bench -c config/default.toml \
     --in assets/lecture.wav --reference assets/lecture.txt
 
 # under classroom babble at a known SNR
-.venv/bin/python -m livesub bench -c config/default.toml \
+python -m livesub bench -c config/default.toml \
     --in assets/lecture.wav --reference assets/lecture.txt \
     --noise assets/classroom_noise.wav --snr 5
 ```
@@ -245,7 +280,7 @@ Measured results and the reasoning behind each choice are in
 [docs/architecture.md](docs/architecture.md).
 
 ```bash
-.venv/bin/python -m pytest -q      # 62 tests, no models or microphone needed
+python -m pytest -q      # 62 tests, no models or microphone needed
 ```
 
 ---
@@ -266,12 +301,12 @@ out  = "text.raw"
 or from the command line:
 
 ```bash
-.venv/bin/python -m livesub run -c config/default.toml --transcribe mlx_whisper --translate mlx_llm_translator --correct mlx_llm_corrector
+python -m livesub run -c config/default.toml --transcribe mlx_whisper --translate mlx_llm_translator --correct mlx_llm_corrector
 ```
 
 (`config/mlx.toml` is exactly that, as a file.)
 
-Available everywhere: `.venv/bin/python -m livesub list`
+Available everywhere: `python -m livesub list`
 
 | Module kind | Implementations |
 | --- | --- |
@@ -326,6 +361,9 @@ class MyTranslator(Module):
 | --- | --- |
 | Level meter never moves | Terminal lacks microphone permission (System Settings → Privacy & Security). |
 | `no input device matching ...` | Run `livesub devices`; match on any part of the name. |
+| PowerShell refuses `.venv\Scripts\Activate.ps1` ("running scripts is disabled") | `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`, then retry. |
+| `ffmpeg not found on PATH` (Windows) | `winget install ffmpeg`, reopen the terminal. |
+| dshow device not found (Windows) | The name must match *Settings → Sound → Playback* exactly, or use the short form `audio=0` with `-f dshow`; run `ffmpeg -list_devices true -f dshow -i dummy` to list names. |
 | Subtitles appear during silence | Whisper hallucinating on noise. Try `--denoise spectral`, or raise `start_db` on the segmenter. |
 | Sentences cut mid-word | Segmenter never sees a pause. Lower `silence_ms` in the VAD node options. |
 | `audio frames dropped under backpressure` | A stage cannot keep up. Use a smaller model, or the fused wiring. |
