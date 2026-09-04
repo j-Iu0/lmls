@@ -1,0 +1,209 @@
+{
+  "config": "config/default.toml",
+  "audio": ".bench_noisy.wav",
+  "realtime": true,
+  "nodes": {
+    "mic": {
+      "stage": "WavReplaySource",
+      "name": "mic",
+      "path": ".bench_noisy.wav",
+      "realtime": true,
+      "duration_s": 36.18
+    },
+    "nr": {
+      "stage": "SpectralDenoiser",
+      "name": "nr",
+      "over_subtraction": 1.5,
+      "floor_gain": 0.1,
+      "latency_ms": 20.0
+    },
+    "asr": {
+      "stage": "MlxWhisperTranscriber",
+      "name": "asr",
+      "model": "mlx-community/whisper-small.en-mlx",
+      "backend": "mlx (Metal GPU)",
+      "segmenter": "energy"
+    },
+    "fix": {
+      "stage": "MlxLlmCorrector",
+      "name": "fix",
+      "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+      "rejected": 0,
+      "calls": 12,
+      "mean_ms": 1520.9,
+      "output_tokens": 281,
+      "tokens_per_s": 15.4,
+      "json_repairs": 6,
+      "failures": 0
+    },
+    "vi": {
+      "stage": "MlxLlmTranslator",
+      "name": "vi",
+      "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+      "target": "vi",
+      "mode": "auto",
+      "calls": 12,
+      "mean_ms": 1520.9,
+      "output_tokens": 281,
+      "tokens_per_s": 15.4,
+      "json_repairs": 6,
+      "failures": 0
+    },
+    "_collect": {
+      "stage": "CollectSink",
+      "name": "_collect",
+      "events": 88
+    }
+  },
+  "metrics": {
+    "counts": {
+      "raw": 41,
+      "corrected": 41,
+      "translated": 6
+    },
+    "stages": {
+      "asr": {
+        "n": 88,
+        "p50": 272.7,
+        "p95": 718.8,
+        "mean": 364.6
+      },
+      "correct_llm": {
+        "n": 12,
+        "p50": 1760.7,
+        "p95": 2550.6,
+        "mean": 1871.0
+      },
+      "fix": {
+        "n": 47,
+        "p50": 0.0,
+        "p95": 1951.5,
+        "mean": 477.7
+      },
+      "nr": {
+        "n": 1840,
+        "p50": 0.1,
+        "p95": 0.5,
+        "mean": 0.3
+      },
+      "translate_llm": {
+        "n": 6,
+        "p50": 1256.1,
+        "p95": 1417.7,
+        "mean": 1175.9
+      },
+      "vi": {
+        "n": 6,
+        "p50": 1256.2,
+        "p95": 1417.7,
+        "mean": 1176.0
+      }
+    },
+    "end_to_end": {
+      "corrected": {
+        "n": 6,
+        "p50": 2543.8,
+        "p95": 2865.9,
+        "max": 2940.0
+      },
+      "raw": {
+        "n": 6,
+        "p50": 694.0,
+        "p95": 950.6,
+        "max": 977.5
+      },
+      "translated": {
+        "n": 6,
+        "p50": 3833.0,
+        "p95": 3918.7,
+        "max": 3932.0
+      }
+    }
+  },
+  "bus": {
+    "audio.clean": {
+      "published": 1840,
+      "policy": "drop_oldest",
+      "subscribers": {
+        "asr": {
+          "received": 1840,
+          "dropped": 0,
+          "max_depth": 48
+        }
+      }
+    },
+    "audio.raw": {
+      "published": 1840,
+      "policy": "drop_oldest",
+      "subscribers": {
+        "nr": {
+          "received": 1840,
+          "dropped": 0,
+          "max_depth": 48
+        }
+      }
+    },
+    "text.corrected": {
+      "published": 41,
+      "policy": "block",
+      "subscribers": {
+        "vi": {
+          "received": 41,
+          "dropped": 0,
+          "max_depth": 3
+        },
+        "_collect": {
+          "received": 41,
+          "dropped": 0,
+          "max_depth": 3
+        }
+      }
+    },
+    "text.out": {
+      "published": 6,
+      "policy": "block",
+      "subscribers": {
+        "_collect": {
+          "received": 6,
+          "dropped": 0,
+          "max_depth": 1
+        }
+      }
+    },
+    "text.raw": {
+      "published": 41,
+      "policy": "block",
+      "subscribers": {
+        "fix": {
+          "received": 41,
+          "dropped": 0,
+          "max_depth": 2
+        },
+        "_collect": {
+          "received": 41,
+          "dropped": 0,
+          "max_depth": 1
+        }
+      }
+    }
+  },
+  "transcript": "Good morning everyone and welcome back to the show. Today we are going to talk about neural network and how they learn. A neural network is made of layers of simple units called neurons. Each neuron several inputs, multiply them by weight, and that's the bias. The result is passed through an activation. answer. The difference between them is called the loss. This process repeats for many epochs until the model converges. Please read chapter 5. For before the next lecture on Thursday.",
+  "raw_transcript": "Good morning everyone and welcome back to the show. Today we are going to talk about neural network and how they learn. A neural network is made of layers of simple units called neurons. Each neuron several inputs, multiply them by weight, and that's the bias. The result is passed through an act. answer. The difference between them is called the loss. This process repeats for many epochs until the model converges. Please read chapter 5. for before the next lecture on Thursday.",
+  "wer": {
+    "displayed": {
+      "wer": 33.64,
+      "substitutions": 7,
+      "deletions": 28,
+      "insertions": 2,
+      "ref_words": 110
+    },
+    "raw_asr": {
+      "wer": 34.55,
+      "substitutions": 8,
+      "deletions": 28,
+      "insertions": 2,
+      "ref_words": 110
+    }
+  },
+  "note": "Recorded before config/no_denoise.toml was renamed. The measurement in this file is what changed the default: no-denoise became config/default.toml and the spectral-denoise wiring became config/with_denoise.toml. The 'config' field below is the preset path as it existed at run time. This run HAD the spectral denoise node."
+}

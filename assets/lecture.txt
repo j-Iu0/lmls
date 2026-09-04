@@ -1,0 +1,10 @@
+Good morning everyone, and welcome back to the course.
+Today we are going to talk about neural networks and how they learn.
+A neural network is made of layers of simple units called neurons.
+Each neuron takes several inputs, multiplies them by weights, and adds a bias.
+The result is passed through an activation function such as a rectified linear unit.
+During training we compare the prediction with the correct answer.
+The difference between them is called the loss.
+Gradient descent then adjusts every weight to make the loss smaller.
+This process repeats for many epochs until the model converges.
+Please read chapter four before the next lecture on Thursday.

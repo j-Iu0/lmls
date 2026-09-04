@@ -1,0 +1,49 @@
+# Correction and translation as ONE node making ONE model call, publishing to two ports.
+# Half the LLM round trips of mlx.toml. What it gives up: the corrected English can
+# no longer reach the screen before the translation is finished, and both halves must
+# share one model.
+#
+# NOTE: this preset uses the MLX implementation, so it requires Apple Silicon. The
+# portable Ollama counterpart (impl = "fused_ollama") is what config/default.toml runs.
+#
+#   livesub run --config config/fused.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+
+[[node]]
+name = "nr"
+impl = "spectral"
+in = "audio.raw"
+out = "audio.clean"
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.clean"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "mlx_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "mlx-community/whisper-small.en-mlx"
+
+[[node]]
+name = "fix_translate"
+impl = "fused_llm"
+in = "text.raw"
+out = { corrected = "text.corrected", translated = "text.out" }
+target = "vi"
+model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]

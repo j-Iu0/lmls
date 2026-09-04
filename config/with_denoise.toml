@@ -1,0 +1,47 @@
+# The comparison wiring: default.toml plus a noise-reduction node.
+#
+# Kept so the claim in default.toml is checkable rather than asserted. Measured WER against
+# classroom babble (docs/architecture.md 2.2) says this is WORSE than default.toml at every
+# SNR tested -- it is here to be measured, not recommended.
+#
+#   livesub bench -c config/with_denoise.toml --in assets/lecture.wav \
+#       --reference assets/lecture.txt --noise assets/classroom_noise.wav --snr 5
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+
+[[node]]
+name = "nr"
+impl = "spectral"          # try: highpass_gate, noisereduce, deepfilternet, passthrough_denoiser
+in = "audio.raw"
+out = "audio.clean"
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.clean"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "faster_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "small.en"
+
+[[node]]
+name = "fix_translate"
+impl = "fused_ollama"
+in = "text.raw"
+out = { corrected = "text.corrected", translated = "text.out" }
+target = "vi"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]

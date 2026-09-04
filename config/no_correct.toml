@@ -1,0 +1,48 @@
+# No correction stage. The translator subscribes to text.raw and translates faithfully --
+# the raw English line goes to the screen as-is, ASR errors included. The one-call
+# repair-and-translate arrangement this preset used to demonstrate (repair_mode on the
+# translator) is now the default wiring: impl = "fused_ollama", config/default.toml.
+#
+# Portable wiring: faster-whisper ASR, Ollama LLM (see config/default.toml for setup).
+#
+#   livesub run --config config/no_correct.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+
+[[node]]
+name = "nr"
+impl = "spectral"
+in = "audio.raw"
+out = "audio.clean"
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.clean"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "faster_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "small.en"
+
+[[node]]
+name = "vi"
+impl = "ollama_translator"
+in = "text.raw"                                           # <- straight from the ASR
+out = { text_out = "text.out" }
+target = "vi"
+model = "qwen3.5:4b"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.out"]

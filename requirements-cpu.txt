@@ -1,0 +1,9 @@
+# The portable default pipeline (config/default.toml): transcription runs in-process on
+# faster-whisper (CPU everywhere, CUDA where available) and the LLM stages talk to a
+# locally installed Ollama server. No Apple Silicon, no API key, nothing leaves the
+# machine.
+#   ollama pull qwen3.5:4b                          # the server side (outside the venv)
+#   .venv/bin/pip install -r requirements-cpu.txt
+#   .venv/bin/python -m livesub run -c config/default.toml
+faster-whisper==1.2.1   # transcribe impl "faster_whisper"
+ollama>=0.5             # correct/translate impl "ollama"

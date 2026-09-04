@@ -1,0 +1,43 @@
+# Caption a video file, a stream URL, or system audio instead of the microphone.
+# Only the input node differs from default.toml -- every other stage is untouched,
+# because ffmpeg normalises whatever it is given to the same 16 kHz mono frames the
+# microphone produces.
+#
+#   livesub run --config config/video.toml                     # the url below
+#   livesub run --config config/video.toml --source "Background Music" --device
+#   livesub run --config config/video.toml --source lecture.mp4
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "src"
+impl = "ffmpeg"
+out = "audio.raw"
+url = "assets/lecture.wav"
+realtime = true
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "faster_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "small.en"
+
+[[node]]
+name = "fix_translate"
+impl = "fused_ollama"
+in = "text.raw"
+out = { corrected = "text.corrected", translated = "text.out" }
+target = "vi"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]

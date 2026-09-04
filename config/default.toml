@@ -1,0 +1,109 @@
+# Reference wiring: microphone -> VAD -> ASR -> correct+translate -> display, with
+# correction and translation FUSED into one node making one model call.
+#
+# This file IS the architecture. Nothing in the Python knows this shape; every node below
+# is resolved by name and connected by the topics it names. To change the pipeline, edit
+# this file -- see the sibling presets for the variations.
+#
+# This default is the PORTABLE one: the ASR runs in-process (faster-whisper, CPU) and the
+# fused stage talks to an Ollama server, so it runs on Linux, Windows, NVIDIA, AMD, or CPU.
+# The Apple Silicon presets are config/mlx.toml (split) and config/fused.toml (fused).
+#
+#   livesub run --config config/default.toml
+#   livesub graph --config config/default.toml --mermaid
+#
+# Prerequisites, once:
+#
+#     ollama pull qwen3.5:4b                            # the one model: corrects + translates
+#     .venv/bin/pip install -r requirements-cpu.txt     # faster-whisper + ollama client
+#
+# One node makes one model call per line instead of two (the measured cost of the split
+# wiring, docs/architecture.md 3.1). The server loads the model once and keeps it in
+# memory (keep_alive 30m) between subtitle lines.
+
+[settings]
+target = "vi"
+
+# ── capture ────────────────────────────────────────────────────────────────────
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+device = "default"      # `livesub devices` lists them; "Background Music" = system audio
+
+# ── noise reduction (OPTIONAL -- and OFF here, on purpose) ─────────────────────
+# There is no denoise node in this wiring, and that is an evidence-based decision, not
+# an oversight. Measured word error rate against classroom babble at four SNRs (see
+# docs/architecture.md 2.2): no denoiser setting beat no denoising at ANY level. At
+# +5 dB the spectral gate roughly doubled WER, 19.1% -> 34.6%, almost entirely through
+# deletions -- it was eating speech, not noise.
+#
+# Whisper is trained on noisy real-world audio and is already robust to babble; classical
+# spectral subtraction introduces artefacts it has never seen, which cost more than the
+# noise removes. To put the stage back and compare for yourself:
+#
+#     livesub run -c config/with_denoise.toml
+#
+# ── utterance segmentation ─────────────────────────────────────────────────────
+# The VAD node cuts the stream into utterances. The transcriber consumes utterances,
+# not raw frames -- how audio is chunked is decided here, as its own node, so the ASR
+# adapter stays a pure decoder. A neural VAD is one node swap away (impl = "silero").
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+# ── transcription ──────────────────────────────────────────────────────────────
+# faster-whisper is the portable ASR: CPU everywhere, no Metal required. It ships in
+# requirements-cpu.txt together with the Ollama client -- the two halves of this wiring.
+[[node]]
+name = "asr"
+impl = "faster_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "small.en"
+
+# ── correction + translation (FUSED) ───────────────────────────────────────────
+# One node, one model call, two output ports: it fixes recognition errors and
+# translates in the same call, publishing the corrected English to text.corrected and
+# the translation to text.out. The display cannot tell this apart from two separate
+# nodes -- but the line costs half the LLM round trips of the split wiring.
+#
+# What the fusion gives up: both halves share one model, and the corrected English
+# lands on screen with the translation instead of before it. The split arrangement
+# (separate ollama_corrector + ollama_translator nodes) is config/mlx.toml's shape;
+# handing correction to the translator outright is config/no_correct.toml.
+#
+# Adding a language stays a one-node change: add a translator subscribed to
+# text.corrected with target = "zh" for simultaneous Vietnamese and Chinese
+# (config/bilingual.toml).
+[[node]]
+name = "fix_translate"
+impl = "fused_ollama"
+in = "text.raw"
+out = { corrected = "text.corrected", translated = "text.out" }
+target = "vi"
+model = "qwen3.5:4b"
+
+# ── display ────────────────────────────────────────────────────────────────────
+# Subscribing to all three text topics is what produces incremental correction: raw
+# English appears first, the corrected revision replaces it in place, the translation
+# fills the second line.
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]
+show_latency = true
+
+[[node]]
+name = "log"
+impl = "jsonl"
+in = ["text.raw", "text.corrected", "text.out"]
+path = "logs/session.jsonl"
+
+[[node]]
+name = "ws"
+impl = "websocket_server"
+in = ["text.raw", "text.corrected", "text.out"]
+port = 8765

@@ -1,0 +1,7 @@
+# Optional cloud adapters for CORRECTION and TRANSLATION only.
+# None of these are needed for the default local-first pipeline, and there is no cloud
+# speech-to-text adapter -- transcription stays on the machine, since that is the stage
+# holding the raw lecture audio.
+#   .venv/bin/pip install -r requirements-cloud.txt
+anthropic>=0.40       # correct.cloud_llm / translate.cloud_llm
+openai>=1.55          # ditto, provider = "openai"

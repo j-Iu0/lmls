@@ -1,0 +1,73 @@
+# The reference wiring on Apple Silicon, with every model running in-process on MLX.
+# Same architecture as config/default.toml -- the stages, correction and translation
+# as separate nodes -- but the implementations are the Metal-accelerated ones, which
+# measured faster per line than the Ollama server path (docs/architecture.md 2.5/2.6).
+# Requires macOS on Apple Silicon; everything is downloaded into ~/.cache/huggingface on
+# first run (~0.5 GB Whisper, ~2.3 GB Qwen3-4B 4-bit) and runs offline after that.
+#
+#   livesub run --config config/mlx.toml
+#   livesub graph --config config/mlx.toml --mermaid
+
+[settings]
+target = "vi"
+
+# ── capture ────────────────────────────────────────────────────────────────────
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+device = "default"      # `livesub devices` lists them; "Background Music" = system audio
+
+# ── noise reduction (OPTIONAL -- and OFF here, on purpose) ─────────────────────
+# Measured worse than no denoising at every SNR tested; see docs/architecture.md 2.2.
+
+# ── utterance segmentation ─────────────────────────────────────────────────────
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+# ── transcription ──────────────────────────────────────────────────────────────
+[[node]]
+name = "asr"
+impl = "mlx_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "mlx-community/whisper-small.en-mlx"
+
+# ── correction ─────────────────────────────────────────────────────────────────
+[[node]]
+name = "fix"
+impl = "mlx_llm_corrector"
+in = "text.raw"
+out = "text.corrected"
+model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+
+# ── translation ────────────────────────────────────────────────────────────────
+[[node]]
+name = "vi"
+impl = "mlx_llm_translator"
+in = "text.corrected"
+out = { text_out = "text.out" }
+target = "vi"
+model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+
+# ── display ────────────────────────────────────────────────────────────────────
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]
+show_latency = true
+
+[[node]]
+name = "log"
+impl = "jsonl"
+in = ["text.raw", "text.corrected", "text.out"]
+path = "logs/session.jsonl"
+
+[[node]]
+name = "ws"
+impl = "websocket_server"
+in = ["text.raw", "text.corrected", "text.out"]
+port = 8765

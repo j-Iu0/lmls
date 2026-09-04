@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+logs/
+.bench_noisy.wav
+.pytest_cache/
+.DS_Store
+.mp3

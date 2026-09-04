@@ -1,0 +1,52 @@
+# Two translators subscribe to the SAME text.corrected topic and run concurrently, giving
+# Vietnamese and Chinese from a single correction pass. This is fan-out: no code changed,
+# one node added. The display shows three lines per utterance. Both translators share one
+# Ollama engine per (host, model), so the server still holds the model only once.
+#
+#   livesub run --config config/bilingual.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "faster_whisper"
+in = "utterance.speech"
+out = "text.raw"
+model = "small.en"
+
+[[node]]
+name = "fix"
+impl = "ollama_corrector"
+in = "text.raw"
+out = "text.corrected"
+
+[[node]]
+name = "vi"
+impl = "ollama_translator"
+in = "text.corrected"
+out = { text_out = "text.vi" }
+target = "vi"
+
+[[node]]
+name = "zh"
+impl = "ollama_translator"
+in = "text.corrected"
+out = { text_out = "text.zh" }
+target = "zh"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.vi", "text.zh"]

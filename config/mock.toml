@@ -1,0 +1,44 @@
+# Everything runs, nothing is downloaded. Used by CI, and by anyone who wants to see the
+# pipeline and the display behaviour before committing to a 2.5 GB model.
+#
+#   livesub run --config config/mock.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "src"
+impl = "wav"
+out = "audio.raw"
+path = "assets/lecture.wav"
+realtime = true
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "mock_transcriber"
+in = "utterance.speech"
+out = "text.raw"
+
+[[node]]
+name = "fix"
+impl = "rules"
+in = "text.raw"
+out = "text.corrected"
+
+[[node]]
+name = "vi"
+impl = "mock_translator"
+in = "text.corrected"
+out = { text_out = "text.out" }
+target = "vi"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]

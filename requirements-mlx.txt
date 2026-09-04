@@ -1,0 +1,12 @@
+# Apple-Silicon local models. Install on top of requirements.txt:
+#   .venv/bin/pip install -r requirements-mlx.txt
+#
+# mlx-whisper is the only Whisper runtime here that uses the M1/M2/M3 GPU via Metal.
+# faster-whisper (CTranslate2) has no Metal backend and runs CPU-only on Apple Silicon;
+# it is kept as the portable fallback, not the default.
+mlx-whisper==0.4.3
+mlx-lm==0.31.3
+
+# Voice activity detection used to cut utterances out of the live stream.
+silero-vad==6.2.1
+torch>=2.4          # silero-vad runtime; CPU is fine, the model is ~2 MB
