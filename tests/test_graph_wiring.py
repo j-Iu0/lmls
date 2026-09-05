@@ -148,6 +148,60 @@ def test_a_source_cannot_have_inputs():
         cfg_from(nodes)
 
 
+def test_an_out_list_can_skip_a_port_with_underscore():
+    """A "_" entry in list-form `out` leaves that declared port unwired (spec §10.2).
+
+    MockTranslator declares {"text_out", "corrected"} in that order, so
+    ["_", "text.corrected"] must wire only the corrected port; the translator
+    simply publishes nothing on text_out.
+    """
+    nodes = full_pipeline()
+    nodes[5]["out"] = ["_", "text.corrected"]
+    # vi now publishes text.corrected, so it must stop reading it (self-cycle):
+    nodes[5]["in"] = "text.raw"
+    nodes[6]["in"] = ["text.raw", "text.corrected"]  # text.out is no longer produced
+    cfg = cfg_from(nodes)
+    assert cfg.node("vi").outputs == {"corrected": "text.corrected"}
+    assert "text.out" not in cfg.node("vi").out_topics
+    assert validate(cfg) == []
+
+
+def test_an_out_table_cannot_use_underscore_as_a_topic():
+    nodes = full_pipeline()
+    nodes[5]["out"] = {"corrected": "_"}
+    with pytest.raises(ConfigError, match="'_' is not a topic name"):
+        cfg_from(nodes)
+
+
+def test_an_out_string_cannot_be_an_underscore():
+    nodes = full_pipeline()
+    nodes[4]["out"] = "_"  # RuleCorrector: single output port
+    with pytest.raises(ConfigError, match="'_' is not a topic name"):
+        cfg_from(nodes)
+
+
+def test_an_all_underscore_out_list_needs_an_output_topic():
+    nodes = full_pipeline()
+    nodes[5]["out"] = ["_", "_"]
+    with pytest.raises(GraphError, match="needs an output topic"):
+        validate(cfg_from(nodes))
+
+
+async def test_a_skipped_out_port_publishes_nothing():
+    """repair_mode builds frames for both ports every call; the skipped port's
+    frames are dropped before the bus sees them."""
+    nodes = full_pipeline()
+    nodes[5]["out"] = ["_", "text.corrected"]
+    nodes[5]["in"] = "text.raw"  # vi publishes text.corrected now; reading it = cycle
+    nodes[5]["repair_mode"] = True
+    nodes[6]["in"] = ["text.raw", "text.corrected"]
+    graph = Graph(cfg_from(nodes))
+    await graph.run(timeout=20)
+    assert graph.metrics.counts.get("en", 0) > 0  # corrected English landed
+    assert graph.metrics.counts.get("vi", 0) == 0  # translations were dropped
+    assert "text.out" not in graph.bus.report()
+
+
 # -- optional stages ---------------------------------------------------------
 
 

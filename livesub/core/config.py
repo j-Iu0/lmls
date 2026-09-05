@@ -31,9 +31,10 @@ Example::
 
 * a single string -- wired to the module's sole port;
 * a list of strings -- topics mapped positionally onto the declared ports, in
-  declaration order (a module with one input port takes any number of topics: fan-in);
-* a table -- explicit ``port_name = "topic"`` entries, validated against the module's
-  port declarations.
+  declaration order (a module with one input port takes any number of topics: fan-in).
+  In an ``out`` list, a ``"_"`` entry skips that port, leaving it unwired;
+* a table -- explicit ``port_name = "topic"`` entries, validated against the
+  module's port declarations.
 
 Any key that is not one of the structural keys (``name``, ``impl``, ``in``, ``out``,
 ``enabled``, ``mode``, ``skip_if_finalized``) is passed to the implementation's
@@ -166,6 +167,11 @@ def _parse_out(raw_out: Any, cls: type, name: str, index: int) -> dict[str, str]
     if raw_out is None:
         return {}
     if isinstance(raw_out, str):
+        if raw_out == "_":
+            raise ConfigError(
+                f"node {name!r}: '_' is not a topic name; use a list "
+                f"(out = [\"_\"]) to skip a port"
+            )
         if len(declared) != 1:
             raise ConfigError(
                 f"node {name!r}: a single 'out' string needs a module with exactly one "
@@ -188,13 +194,19 @@ def _parse_out(raw_out: Any, cls: type, name: str, index: int) -> dict[str, str]
                 f"{cls.__name__} which declares {len(declared)} output ports "
                 f"{declared}; use a table of port = topic to name them"
             )
-        return {port: str(t) for port, t in zip(declared, raw_out)}
+        # A "_" entry skips that port: it is left unwired and publishes nothing.
+        return {port: str(t) for port, t in zip(declared, raw_out) if t != "_"}
     if isinstance(raw_out, dict):
-        for port_name in raw_out:
+        for port_name, topic in raw_out.items():
             if port_name == "*":
                 raise ConfigError(
                     f"node {name!r}: '*' is not a port name; name the port "
                     f"explicitly (declared: {sorted(cls.outputs)})"
+                )
+            if topic == "_":
+                raise ConfigError(
+                    f"node {name!r}: '_' is not a topic name; omit the port to "
+                    f"leave it unwired (declared: {sorted(cls.outputs)})"
                 )
             if port_name not in cls.outputs:
                 raise ConfigError(

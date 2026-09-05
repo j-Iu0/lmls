@@ -237,6 +237,11 @@ class Module(ABC):
                 "inputs": ..., "outputs": ...}
 ```
 
+**Declaration order is load-bearing.** dicts preserve insertion order in Python, and the
+config loader relies on it: list-form wiring (`in = ["a", "b"]`) maps topics onto ports
+*positionally, in declaration order* (§10.2). Insertion order, not alphabetical order —
+write ports in the order data flows through the module.
+
 - `start()` is called before any data flows. Load models, open audio devices, bind sockets.
 - `stop()` is called after all data is processed. Release resources, close files, flush buffers. **Sink implementations that previously had a `flush()` method put that logic here.**
 - `drain()` is called by the graph runner after the input stream is exhausted, before closing the output topic. Return any buffered payloads still to publish. Segmenters override this to emit the in-progress utterance at end-of-file.
@@ -530,9 +535,19 @@ in  = "utterance.speech"
 out = "text.raw"
 ```
 
-**List** — topics mapped positionally onto declared ports. When the module has exactly one input port, any number of topics creates a fan-in:
+**List** — topics mapped **positionally** onto the declared ports, in the order the
+module declared them (see §4). Reordering the list re-wires the node; there is no name
+matching in this form. When the module has exactly one input port, any number of topics
+creates a fan-in (all topics subscribe to that one port):
 ```toml
 in = ["text.raw", "text.corrected", "text.out"]   # fan-in: all to one port
+```
+For `out` the list must contain exactly one topic per declared output port — outputs
+never fan-out implicitly. A `"_"` entry skips that port: it is left unwired and
+publishes nothing, and no bus topic is created for it. No node may subscribe to a topic
+that only a skipped port produced — validation rejects it as unpublished:
+```toml
+out = ["_", "text.out"]   # skip the first declared port; wire the second
 ```
 
 **Table** — explicit `port_name = "topic"` mapping, validated against the module's declarations:
