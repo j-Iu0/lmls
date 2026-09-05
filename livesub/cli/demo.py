@@ -1,82 +1,224 @@
-"""``livesub demo`` -- the live demonstration: play the audio aloud, caption it live.
+"""The deliberately opinionated ``livesub demo`` command.
 
-The spec requires showing speech going in and bilingual subtitles coming out, with
-the delay visible. This runs the real pipeline against a real file, plays that file
-through the speakers, and prints English and the translation as they are produced.
-
-Two details make it an honest demonstration rather than a rehearsed one:
-
-**Models are warmed before playback starts.** Loading a local LLM and a Whisper model
-takes several seconds on a cold process, and Whisper in particular loads lazily on its
-first call. If audio began at the same moment, every subtitle would appear that much late
-and the delay on screen would be a measurement of the model loader, not of the pipeline.
-So a dummy inference is forced through every stage first, and only then does the audio
-start. The latency you see afterwards is the real one.
-
-**Playback and the pipeline read the same file, started together.** The pipeline does not
-listen to the speakers -- that would need a loopback device and would add the sound card's
-own latency to the number being demonstrated. Both are paced at wall-clock speed from the
-same instant, so what you hear and what you read line up.
-
-To caption actual speaker output instead (a video call, a browser tab), use the loopback
-device path documented in the README -- that is a different demonstration, of the input
-module rather than of the latency.
+Unlike ``livesub run``, the demo never reads a graph config.  It builds one known-good
+variant of the default pipeline and exposes only the choices that make sense while a
+demo is running: capture source, compute backend, output languages and queue policy.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
+import logging
+import platform
 import shutil
-import subprocess
 import sys
-import tempfile
 import threading
 import time
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import typer
 
-from ..core.audioutil import save_wav
-from ..core.config import load_config
+from ..core.config import GraphConfig, NodeConfig
 from ..core.graph import Graph
-from ..core.registry import resolve
 from ..core.startup import StartupEvent, StartupPhase
 from ..core.types import SAMPLE_RATE, AudioFrame, TextFrame, Utterance
 
 
-def _slice_to_wav(source: Path, start: float, seconds: float) -> Path:
-    """Normalise (and optionally cut) the source to a 16 kHz mono wav.
-
-    Done up front rather than streaming through ffmpeg so that the audio player and the
-    pipeline are reading byte-identical audio, and so a slice starts instantly.
-    """
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError("ffmpeg not found on PATH; `brew install ffmpeg`")
-    out = Path(tempfile.gettempdir()) / f"livesub_demo_{os.getpid()}.wav"
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
-    if start:
-        cmd += ["-ss", str(start)]
-    if seconds:
-        cmd += ["-t", str(seconds)]
-    cmd += ["-i", str(source), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), str(out)]
-    subprocess.run(cmd, check=True)
-    return out
+class SourceChoice(str, Enum):
+    mic = "mic"
+    ffmpeg = "ffmpeg"
 
 
-async def _warm(graph: Graph, target: str) -> float:
-    """Force every model to load and run once. Returns seconds spent.
+class BackendChoice(str, Enum):
+    mlx = "mlx"
+    whisper_ollama = "whisper-ollama"
+    cuda = "cuda"
 
-    Dispatches on the module's declared port types rather than on class hierarchy:
-    an Utterance input is a transcriber (warm via the one-shot path), a TextFrame
-    input is an LLM text stage (warm with a probe frame), an AudioFrame in-and-out is
-    a denoiser (warm with one silent frame).
-    """
+
+class BufferChoice(str, Enum):
+    live = "live"
+    block = "block"
+
+
+class LogLevel(str, Enum):
+    debug = "debug"
+    info = "info"
+    warning = "warning"
+    error = "error"
+
+
+_MLX_ASR_MODEL = "mlx-community/whisper-small.en-mlx"
+_MLX_LLM_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+_WHISPER_MODEL = "small.en"
+_OLLAMA_MODEL = "qwen3.5:4b"
+_OLLAMA_HOST = "http://localhost:11434"
+
+
+def _detect_backend() -> BackendChoice:
+    """Choose for the host, without importing a model runtime or loading weights."""
+    if sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
+        return BackendChoice.mlx
+    if shutil.which("nvidia-smi") is not None:
+        return BackendChoice.cuda
+    return BackendChoice.whisper_ollama
+
+
+def _languages(values: list[str]) -> list[str]:
+    """Accept repeated flags as well as the convenient ``vi,zh`` spelling."""
+    result: list[str] = []
+    for value in values:
+        for language in value.split(","):
+            language = language.strip().lower()
+            if language and language not in result:
+                result.append(language)
+    if not result:
+        raise typer.BadParameter("select at least one output language")
+    return result
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from .. import __version__
+
+        typer.echo(f"livesub {__version__}")
+        raise typer.Exit()
+
+
+def _demo_config(
+    *,
+    source: SourceChoice,
+    source_input: str | None,
+    ffmpeg_device: bool,
+    backend: BackendChoice,
+    languages: list[str],
+    buffer: BufferChoice,
+    asr_model: str | None = None,
+    llm_model: str | None = None,
+    ollama_host: str = _OLLAMA_HOST,
+    start: float = 0.0,
+    jsonl: Path | None = None,
+    websocket_port: int | None = None,
+) -> GraphConfig:
+    """Build the fixed demo graph.  No filesystem config is consulted."""
+    mode = "live" if buffer is BufferChoice.live else "blocking"
+
+    if source is SourceChoice.ffmpeg:
+        if not source_input:
+            raise typer.BadParameter(
+                "--source ffmpeg requires --input FILE_OR_URL (or --in)"
+            )
+        source_options: dict[str, Any] = {
+            "url": source_input,
+            "device": ffmpeg_device,
+            "realtime": True,
+        }
+        if start:
+            source_options["extra_args"] = ["-ss", str(start)]
+    else:
+        if ffmpeg_device:
+            raise typer.BadParameter("--ffmpeg-device requires --source ffmpeg")
+        if start:
+            raise typer.BadParameter("--start requires --source ffmpeg")
+        source_options = {"device": source_input or "default"}
+
+    if backend is BackendChoice.mlx:
+        asr_impl, correct_impl, translate_impl = (
+            "mlx_whisper", "mlx_llm_corrector", "mlx_llm_translator"
+        )
+        asr_options = {"model": asr_model or _MLX_ASR_MODEL}
+        llm_options = {"model": llm_model or _MLX_LLM_MODEL}
+    else:
+        asr_impl, correct_impl, translate_impl = (
+            "faster_whisper", "ollama_corrector", "ollama_translator"
+        )
+        asr_options = {
+            "model": asr_model or _WHISPER_MODEL,
+            "device": "cuda" if backend is BackendChoice.cuda else "auto",
+            "compute_type": "float16" if backend is BackendChoice.cuda else "int8",
+        }
+        llm_options = {
+            "model": llm_model or _OLLAMA_MODEL,
+            "host": ollama_host,
+        }
+
+    nodes = [
+        NodeConfig(
+            name="source", impl=source.value,
+            outputs={"audio": "audio.raw"}, options=source_options,
+        ),
+        NodeConfig(
+            name="vad", impl="energy", inputs={"audio": "audio.raw"},
+            outputs={"utterance": "utterance.speech"}, mode=mode,
+        ),
+        NodeConfig(
+            name="asr", impl=asr_impl, inputs={"audio": "utterance.speech"},
+            outputs={"text": "text.raw"}, options=asr_options, mode=mode,
+        ),
+        NodeConfig(
+            name="fix", impl=correct_impl, inputs={"text_in": "text.raw"},
+            outputs={"text_out": "text.corrected"}, options=dict(llm_options),
+            mode=mode,
+        ),
+    ]
+
+    text_topics = ["text.raw", "text.corrected"]
+    for index, language in enumerate(languages):
+        topic = f"text.translation.{index}"
+        nodes.append(
+            NodeConfig(
+                name=f"translate_{index}_{language.replace('-', '_')}",
+                impl=translate_impl,
+                inputs={"text_in": "text.corrected"},
+                outputs={"text_out": topic},
+                options={**llm_options, "target": language},
+                mode=mode,
+            )
+        )
+        text_topics.append(topic)
+
+    sink_inputs = {
+        "text" if i == 0 else f"text_{i}": topic
+        for i, topic in enumerate(text_topics)
+    }
+    nodes.append(
+        NodeConfig(
+            name="screen", impl="stdout_pretty", inputs=sink_inputs,
+            options={"show_latency": True}, mode=mode,
+        )
+    )
+    if jsonl is not None:
+        nodes.append(
+            NodeConfig(
+                name="log", impl="jsonl", inputs=dict(sink_inputs),
+                options={"path": str(jsonl)}, mode=mode,
+            )
+        )
+    if websocket_port is not None:
+        nodes.append(
+            NodeConfig(
+                name="ws", impl="websocket_server", inputs=dict(sink_inputs),
+                options={"port": websocket_port}, mode=mode,
+            )
+        )
+
+    return GraphConfig(
+        nodes=nodes,
+        settings={
+            "backend": backend.value,
+            "languages": languages,
+            "buffer_mode": buffer.value,
+        },
+    )
+
+
+async def _warm(graph: Graph) -> float:
+    """Load models and force one inference before capture starts."""
     t0 = time.perf_counter()
-    silence = np.zeros(SAMPLE_RATE, dtype=np.float32)  # 1 s, long enough to not be skipped
+    silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
     loop = asyncio.get_running_loop()
 
     for node in graph.nodes:
@@ -84,18 +226,22 @@ async def _warm(graph: Graph, target: str) -> float:
         cls = type(stage)
         in_types = set(cls.inputs.values())
         with contextlib.suppress(Exception):
-            if Utterance in in_types and hasattr(stage, "transcribe_array"):
-                await loop.run_in_executor(
-                    None, stage.transcribe_array, silence, SAMPLE_RATE
+            if Utterance in in_types:
+                # Go through the live path directly. The one-shot path segments first,
+                # so a silent probe would never reach Whisper and would not warm it.
+                now = time.time()
+                await stage.process(
+                    Utterance("_warmup", silence, now - 1.0, now, is_final=True)
                 )
-            elif TextFrame in in_types:
+            elif TextFrame in in_types and cls.outputs:
                 from dataclasses import replace
                 from ..core.types import Lineage
 
                 probe = TextFrame(
                     text="This is a warm up sentence.",
-                    lineage=replace(Lineage.new(segment_id="_warmup"),
-                                    t_audio_end=time.time()),
+                    lineage=replace(
+                        Lineage.new(segment_id="_warmup"), t_audio_end=time.time()
+                    ),
                 )
                 await stage.process(probe)
             elif AudioFrame in in_types and AudioFrame in set(cls.outputs.values()):
@@ -104,108 +250,132 @@ async def _warm(graph: Graph, target: str) -> float:
     return time.perf_counter() - t0
 
 
-def _play(path: Path) -> subprocess.Popen | None:
-    """Start audible playback. ``afplay`` on macOS, ``ffplay`` elsewhere."""
-    if shutil.which("afplay"):
-        cmd = ["afplay", str(path)]
-    elif shutil.which("ffplay"):
-        cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)]
-    else:
-        return None
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def register(app: typer.Typer) -> None:
     @app.command()
     def demo(
-        infile: Path = typer.Option(..., "--in", help="Audio or video file to caption."),
-        target: str = typer.Option("vi", help="Target language: vi, zh, ..."),
-        config: Path = typer.Option(
-            Path("config/default.toml"), "--config", "-c",
-            help="Wiring to demonstrate (config/mlx.toml / config/fused.toml for Apple Silicon).",
+        source: SourceChoice = typer.Option(
+            "mic", help="Capture adapter: mic or ffmpeg."
         ),
-        start: float = typer.Option(0.0, help="Skip this many seconds in."),
+        source_input: Optional[str] = typer.Option(
+            None, "--input", "--in",
+            help="Mic device name, or an ffmpeg file/URL/device.",
+        ),
+        ffmpeg_device: bool = typer.Option(
+            False, help="Treat ffmpeg input as a capture device."
+        ),
+        backend: Optional[BackendChoice] = typer.Option(
+            None, help="Compute backend; omitted means detect from this host."
+        ),
+        language: list[str] = typer.Option(
+            ["vi"], "--language", "--target", "-l",
+            help="Output language; repeat the flag or use a comma-separated list.",
+        ),
+        buffer_mode: BufferChoice = typer.Option(
+            "live", help="Queue policy: live or block."
+        ),
         seconds: float = typer.Option(
-            90.0, help="Length to demo; 0 plays the whole file."
+            0.0, help="Stop after N seconds; 0 runs until input ends or Ctrl-C."
         ),
-        audio: bool = typer.Option(True, help="Play the audio aloud."),
-        model: Optional[str] = typer.Option(None, help="Override the LLM model id."),
+        start: float = typer.Option(
+            0.0, help="For ffmpeg inputs, seek this many seconds before reading."
+        ),
+        asr_model: Optional[str] = typer.Option(None, help="Override the ASR model."),
+        llm_model: Optional[str] = typer.Option(None, help="Override the LLM model."),
+        ollama_host: str = typer.Option(
+            _OLLAMA_HOST, help="Ollama URL for whisper-ollama and cuda."
+        ),
+        log_level: LogLevel = typer.Option(
+            "warning", help="Python log level."
+        ),
+        jsonl: Optional[Path] = typer.Option(
+            None, help="Also write subtitle events to this JSONL file."
+        ),
+        websocket_port: Optional[int] = typer.Option(
+            None, help="Also publish subtitle events over WebSocket."
+        ),
+        warm: bool = typer.Option(True, help="Warm models before capture starts."),
+        stats: bool = typer.Option(True, help="Print latency statistics on exit."),
+        version: bool = typer.Option(
+            False,
+            "--version",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
     ) -> None:
-        """Play a file aloud and print live bilingual subtitles beside it."""
-        if not infile.exists():
-            typer.secho(f"no such file: {infile}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(2)
+        """Run the fixed live-subtitle demonstration (no config files)."""
+        logging.basicConfig(
+            level=getattr(logging, log_level.value.upper()),
+            format="%(levelname)s %(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+        selected_backend = backend or _detect_backend()
+        targets = _languages(language)
+        if seconds < 0:
+            raise typer.BadParameter("--seconds must be zero or greater")
+        if start < 0:
+            raise typer.BadParameter("--start must be zero or greater")
+        if websocket_port is not None and not 1 <= websocket_port <= 65535:
+            raise typer.BadParameter("--websocket-port must be between 1 and 65535")
 
-        typer.secho("preparing audio...", fg=typer.colors.BLUE, err=True)
-        clip = _slice_to_wav(infile, start, seconds)
+        cfg = _demo_config(
+            source=source,
+            source_input=source_input,
+            ffmpeg_device=ffmpeg_device,
+            backend=selected_backend,
+            languages=targets,
+            buffer=buffer_mode,
+            asr_model=asr_model,
+            llm_model=llm_model,
+            ollama_host=ollama_host,
+            start=start,
+            jsonl=jsonl,
+            websocket_port=websocket_port,
+        )
 
-        cfg = load_config(config)
-        for node in cfg.nodes:
-            if not node.inputs:  # a source: declares no input ports
-                node.impl = "wav"
-                node.outputs = {"audio": "audio.raw"}
-                node.inputs = {}
-                node.options = {"path": str(clip), "realtime": True}
-            if node.impl.endswith("_translator") or node.impl.startswith("fused"):
-                node.options["target"] = target
-            if (node.impl.endswith(("_corrector", "_translator"))
-                    or node.impl.startswith("fused")) and model:
-                node.options["model"] = model
+        print_lock = threading.Lock()
 
-        _print_lock = threading.Lock()
-
-        def _on_startup(event: StartupEvent) -> None:
-            if event.phase == StartupPhase.IN_PROGRESS:
-                color = typer.colors.BLUE
-                prefix = "  ..."
-            elif event.phase == StartupPhase.READY:
-                color = typer.colors.GREEN
-                prefix = "  ok "
-            else:  # FAILED
-                color = typer.colors.RED
-                prefix = "  ERR"
+        def on_startup(event: StartupEvent) -> None:
+            color, prefix = {
+                StartupPhase.IN_PROGRESS: (typer.colors.BLUE, "  ..."),
+                StartupPhase.READY: (typer.colors.GREEN, "  ok "),
+                StartupPhase.FAILED: (typer.colors.RED, "  ERR"),
+            }[event.phase]
             detail = f" {event.message}" if event.message else ""
-            with _print_lock:
+            with print_lock:
                 typer.secho(
-                    f"{prefix} [{event.module_name}]{detail}",
-                    fg=color, err=True,
+                    f"{prefix} [{event.module_name}]{detail}", fg=color, err=True
                 )
 
-        graph = Graph(cfg, on_startup=_on_startup)
+        graph = Graph(cfg, on_startup=on_startup)
 
         async def go() -> None:
-            # graph.start(), not node.stage.start(): it records what was started, so
-            # graph.run() below will not start (and re-bind / re-load) anything twice.
-            typer.secho("loading modules...", fg=typer.colors.BLUE, err=True)
-            await graph.start()
+            if warm:
+                typer.secho("warming models...", fg=typer.colors.BLUE, err=True)
+                elapsed = await _warm(graph)
+                typer.secho(
+                    f"models warm in {elapsed:.1f}s", fg=typer.colors.GREEN, err=True
+                )
             typer.secho(
-                "loading models (playback starts once they are warm)...",
-                fg=typer.colors.BLUE, err=True,
+                f"demo: {source.value} | {selected_backend.value} | "
+                f"{', '.join(lang.upper() for lang in targets)} | "
+                f"buffer={buffer_mode.value} | Ctrl-C to stop\n",
+                fg=typer.colors.BLUE,
+                err=True,
             )
-            warm = await _warm(graph, target)
-            typer.secho(f"ready in {warm:.1f}s\n", fg=typer.colors.GREEN, err=True)
-
-            player = _play(clip) if audio else None
-            if audio and player is None:
-                typer.secho("no audio player found; running silently",
-                            fg=typer.colors.YELLOW, err=True)
-            typer.secho(
-                f"--- playing {infile.name} | subtitles EN + {target.upper()} "
-                f"| Ctrl-C to stop ---\n",
-                fg=typer.colors.BLUE, err=True,
-            )
-            try:
-                await graph.run()
-            finally:
-                if player is not None and player.poll() is None:
-                    player.terminate()
+            await graph.run(timeout=seconds or None)
 
         try:
             asyncio.run(go())
         except KeyboardInterrupt:
             pass
-        finally:
-            with contextlib.suppress(OSError):
-                clip.unlink()
 
-        typer.secho(graph.metrics.format_table(), err=True)
+        if stats:
+            typer.secho(graph.metrics.format_table(), err=True)
+            dropped = graph.bus.total_dropped()
+            if dropped:
+                typer.secho(
+                    f"\n  {dropped} queued items dropped in live mode.",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
