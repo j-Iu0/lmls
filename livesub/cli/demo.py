@@ -57,6 +57,11 @@ _WHISPER_MODEL = "small.en"
 _OLLAMA_MODEL = "qwen3.5:4b"
 _OLLAMA_HOST = "http://localhost:11434"
 
+# Keep this separate from the implementation mapping. A future backend may expose a
+# fixed appliance/model; accepting --model and silently forwarding it into **options
+# would make the command appear to honor a choice that it cannot actually make.
+_MODEL_SELECTABLE_BACKENDS = frozenset(BackendChoice)
+
 
 def _detect_backend() -> BackendChoice:
     """Choose for the host, without importing a model runtime or loading weights."""
@@ -86,6 +91,19 @@ def _version_callback(value: bool) -> None:
 
         typer.echo(f"livesub {__version__}")
         raise typer.Exit()
+
+
+def _selected_model(backend: BackendChoice, requested: str | None) -> str | None:
+    """Return a supported model override, warning when it must be ignored."""
+    if requested and backend not in _MODEL_SELECTABLE_BACKENDS:
+        typer.secho(
+            f"warning: backend {backend.value!r} does not support model selection; "
+            f"ignoring --model {requested!r}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return None
+    return requested
 
 
 def _demo_config(
@@ -280,7 +298,12 @@ def register(app: typer.Typer) -> None:
             0.0, help="For ffmpeg inputs, seek this many seconds before reading."
         ),
         asr_model: Optional[str] = typer.Option(None, help="Override the ASR model."),
-        llm_model: Optional[str] = typer.Option(None, help="Override the LLM model."),
+        llm_model: Optional[str] = typer.Option(
+            None,
+            "--model",
+            "--llm-model",
+            help="Select the backend language model.",
+        ),
         ollama_host: str = typer.Option(
             _OLLAMA_HOST, help="Ollama URL for whisper-ollama and cuda."
         ),
@@ -310,6 +333,7 @@ def register(app: typer.Typer) -> None:
             stream=sys.stderr,
         )
         selected_backend = backend or _detect_backend()
+        selected_llm_model = _selected_model(selected_backend, llm_model)
         targets = _languages(language)
         if seconds < 0:
             raise typer.BadParameter("--seconds must be zero or greater")
@@ -326,7 +350,7 @@ def register(app: typer.Typer) -> None:
             languages=targets,
             buffer=buffer_mode,
             asr_model=asr_model,
-            llm_model=llm_model,
+            llm_model=selected_llm_model,
             ollama_host=ollama_host,
             start=start,
             jsonl=jsonl,

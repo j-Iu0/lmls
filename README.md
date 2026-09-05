@@ -153,6 +153,9 @@ only exposes deliberate choices. Use `--source mic` (the default) for a micropho
 for simultaneous output, for example `--language vi --language zh`. Choose `--backend
 mlx`, `--backend whisper-ollama`, or `--backend cuda`; when omitted, the host is detected.
 CUDA currently means faster-whisper on CUDA plus Ollama for the language stages.
+Use `--model MODEL` to select the backend language model and `--asr-model MODEL` to
+override Whisper separately. A backend with a fixed model ignores `--model` with a
+visible warning instead of silently accepting it.
 
 Models are loaded and warmed **before** capture begins. `--buffer-mode live` stays current
 by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
