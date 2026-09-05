@@ -270,7 +270,7 @@ confirm it matches each implementation's declared latency.
 | Zoom/Teams live captions | Rejected: only works inside that platform, and the spec asks for a system, not a setting. |
 
 **Model size on 16 GB.** `whisper-small.en` (~0.5 GB) leaves room for the 4-bit Qwen3
-(~2.3 GB) used by correction. `distil-large-v3` is more accurate and still viable;
+(~3.1 GB) used by correction. `distil-large-v3` is more accurate and still viable;
 `large-v3` is not, once the LLM is resident too.
 
 Whisper-specific care, each of which fixed an observed failure:
@@ -321,15 +321,15 @@ and transcribes with 0.91% WER. `tests/test_modules.py` guards this.
 
 ### 2.5 Correction
 
-**Selected: local `mlx-lm` 0.31.3 with `Qwen3-4B-Instruct-2507-4bit`.**
+**Selected: local `mlx-lm` 0.31.3 with `Qwen3.5-4B-4bit`.**
 
 | Option | Verdict |
 | --- | --- |
-| **Qwen3-4B-Instruct-2507 4-bit, local** (chosen) | ~2.3 GB, fits alongside Whisper on 16 GB, strong at both Vietnamese and Chinese, runs offline, no key, no per-minute cost. |
+| **Qwen3.5-4B 4-bit, local** (chosen) | ~3.1 GB, fits alongside Whisper on 16 GB, runs offline, with no key or per-minute cost. |
 | `rules` glossary (also shipped) | Zero latency, no model, and fixes the course-specific jargon that is most of what an ASR gets wrong in a *particular* lecture. Useful in front of the LLM, and a legitimate standalone choice. |
 | `ollama` server (also shipped) | Same class of model (Qwen 4B) served by an Ollama server instead of in-process MLX. Slower per call (~1–3 s on the same hardware) but runs on any OS and any GPU Ollama supports, shares one loaded model across the corrector and translator, and survives pipeline restarts without reloading. The portability path. |
 | Cloud LLM (Claude/GPT) | Better correction, but adds network latency, per-token cost, and sends lecture audio transcripts off the machine. Adapter included, off by default. |
-| A *thinking* model | Rejected outright. Reasoning models emit hundreds of tokens before the answer; the "Instruct-2507" variants are the non-thinking ones and are the only viable class here. |
+| Thinking mode | Disabled in the Qwen3.5 chat template. Reasoning tokens add latency without improving a short correction or translation. |
 
 Guards that matter more than the prompt:
 
@@ -534,7 +534,7 @@ during development.
 | mlx-whisper | 0.4.3 | Metal GPU |
 | mlx-lm | 0.31.3 | |
 | Whisper model | `mlx-community/whisper-small.en-mlx` | ~0.5 GB |
-| LLM | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | ~2.3 GB, non-thinking |
+| LLM | `mlx-community/Qwen3.5-4B-4bit` | ~3.1 GB, 4-bit; thinking disabled |
 | faster-whisper | 1.2.1 | fallback; CPU-only on Apple Silicon |
 | sounddevice | 0.5.6 | PortAudio |
 | noisereduce | 3.0.3 | offline comparison only |

@@ -84,7 +84,7 @@ class StartupEvent:
         Coarse lifecycle state.
     message:
         Human-readable detail.  Use this for network-vs-local distinctions
-        (``"downloading mlx-community/Qwen3-4B"`` vs ``"loading from cache"``)
+        (``"downloading mlx-community/Qwen3.5-4B"`` vs ``"loading from cache"``)
         rather than encoding them in *phase*.
     progress:
         Optional measurable progress.  ``None`` on ``READY``/``FAILED``, and on
