@@ -11,8 +11,10 @@ from livesub.cli.demo import (
     _demo_config,
     _languages,
     _selected_model,
+    _startup_detail,
 )
 from livesub.core.graph import Graph
+from livesub.core.startup import StartupEvent, StartupPhase, StartupProgress
 
 
 def build_demo(**overrides):
@@ -107,3 +109,14 @@ def test_demo_buffer_mode_never_uses_catchup():
 
 def test_language_flags_are_repeatable_comma_aware_and_deduplicated():
     assert _languages(["vi, zh", "vi", "FR"]) == ["vi", "zh", "fr"]
+
+
+def test_startup_event_detail_includes_message_and_progress():
+    event = StartupEvent(
+        "fix",
+        StartupPhase.IN_PROGRESS,
+        "downloading model",
+        StartupProgress(current=25, total=100, unit="MB"),
+    )
+
+    assert _startup_detail(event) == "downloading model | 25/100 MB (25%)"

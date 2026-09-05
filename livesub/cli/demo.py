@@ -8,7 +8,6 @@ demo is running: capture source, compute backend, output languages and queue pol
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import platform
 import shutil
@@ -243,29 +242,48 @@ async def _warm(graph: Graph) -> float:
         stage = node.stage
         cls = type(stage)
         in_types = set(cls.inputs.values())
-        with contextlib.suppress(Exception):
-            if Utterance in in_types:
-                # Go through the live path directly. The one-shot path segments first,
-                # so a silent probe would never reach Whisper and would not warm it.
-                now = time.time()
-                await stage.process(
-                    Utterance("_warmup", silence, now - 1.0, now, is_final=True)
-                )
-            elif TextFrame in in_types and cls.outputs:
-                from dataclasses import replace
-                from ..core.types import Lineage
+        if Utterance in in_types:
+            # Go through the live path directly. The one-shot path segments first,
+            # so a silent probe would never reach Whisper and would not warm it.
+            now = time.time()
+            await stage.process(
+                Utterance("_warmup", silence, now - 1.0, now, is_final=True)
+            )
+        elif TextFrame in in_types and cls.outputs:
+            from dataclasses import replace
+            from ..core.types import Lineage
 
-                probe = TextFrame(
-                    text="This is a warm up sentence.",
-                    lineage=replace(
-                        Lineage.new(segment_id="_warmup"), t_audio_end=time.time()
-                    ),
-                )
-                await stage.process(probe)
-            elif AudioFrame in in_types and AudioFrame in set(cls.outputs.values()):
-                frame = AudioFrame(np.zeros(320, dtype=np.float32), SAMPLE_RATE, 0)
-                await loop.run_in_executor(None, stage.process, frame)
+            probe = TextFrame(
+                text="This is a warm up sentence.",
+                lineage=replace(
+                    Lineage.new(segment_id="_warmup"), t_audio_end=time.time()
+                ),
+            )
+            await stage.process(probe)
+        elif AudioFrame in in_types and AudioFrame in set(cls.outputs.values()):
+            frame = AudioFrame(np.zeros(320, dtype=np.float32), SAMPLE_RATE, 0)
+            await loop.run_in_executor(None, stage.process, frame)
     return time.perf_counter() - t0
+
+
+def _startup_detail(event: StartupEvent) -> str:
+    """Format optional startup progress without assuming every field is known."""
+    parts = [event.message] if event.message else []
+    progress = event.progress
+    if progress is not None:
+        unit = f" {progress.unit}" if progress.unit else ""
+        if progress.current is not None and progress.total is not None:
+            measured = f"{progress.current:g}/{progress.total:g}{unit}"
+        elif progress.current is not None:
+            measured = f"{progress.current:g}{unit}"
+        else:
+            measured = ""
+        if progress.fraction is not None:
+            percent = f"{progress.fraction:.0%}"
+            measured = f"{measured} ({percent})" if measured else percent
+        if measured:
+            parts.append(measured)
+    return " | ".join(parts)
 
 
 def register(app: typer.Typer) -> None:
@@ -365,7 +383,8 @@ def register(app: typer.Typer) -> None:
                 StartupPhase.READY: (typer.colors.GREEN, "  ok "),
                 StartupPhase.FAILED: (typer.colors.RED, "  ERR"),
             }[event.phase]
-            detail = f" {event.message}" if event.message else ""
+            formatted = _startup_detail(event)
+            detail = f" {formatted}" if formatted else ""
             with print_lock:
                 typer.secho(
                     f"{prefix} [{event.module_name}]{detail}", fg=color, err=True
@@ -393,6 +412,9 @@ def register(app: typer.Typer) -> None:
             asyncio.run(go())
         except KeyboardInterrupt:
             pass
+        except Exception as exc:
+            typer.secho(f"demo failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
 
         if stats:
             typer.secho(graph.metrics.format_table(), err=True)

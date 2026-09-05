@@ -220,6 +220,22 @@ async def test_graph_wires_callback_to_all_modules():
     assert isinstance(received, list)
 
 
+def test_graph_wires_callback_before_start_for_driver_warmup():
+    """A driver that pre-warms modules must receive their startup events too."""
+    received: list[StartupEvent] = []
+    graph = _make_graph(
+        [{"name": "src", "impl": "wav", "out": "audio.raw",
+          "path": "assets/lecture.wav", "realtime": False}],
+        on_startup=received.append,
+    )
+
+    graph.nodes[0].stage._report_startup(StartupPhase.IN_PROGRESS, "pre-warming")
+
+    assert received == [
+        StartupEvent("src", StartupPhase.IN_PROGRESS, "pre-warming")
+    ]
+
+
 @pytest.mark.asyncio
 async def test_graph_no_callback_no_crash():
     """Graph works fine with on_startup=None (the default)."""
@@ -256,4 +272,3 @@ async def test_graph_callback_receives_events_from_reporting_module():
         assert phases.index(StartupPhase.IN_PROGRESS) < phases.index(StartupPhase.READY)
     finally:
         REGISTRY.pop("_reporting_src", None)
-
