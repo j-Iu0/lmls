@@ -25,7 +25,7 @@ in the README. They are instances of the contract below, not part of it.
 5. [Module Constraints](#5-module-constraints)
 6. [The Bus (Background)](#6-the-bus-background)
 7. [Built-in Data Types](#7-built-in-data-types)
-8. [Registry and Wiring](#8-registry-and-wiring)
+8. [Registering a Module](#8-registering-a-module)
 9. [Worked Examples](#9-worked-examples)
 
 ---
@@ -466,23 +466,12 @@ the text represents; the frame carries no kind field.
 
 ---
 
-## 8. Registry and Wiring
-
-### 8.1 Registry
+## 8. Registering a Module
 
 `livesub.core.registry` maps `impl` names to classes, resolved lazily — importing
 `livesub` loads none of the implementations until one is actually built.
 
-```python
-from livesub.core.registry import build, resolve, available
-
-stage = build("spectral", name="nr", chunk_ms=40)  # instantiate; sets .name
-cls   = resolve("faster_whisper")                  # just the class
-names = available()                                # all registered impl names
-```
-
-To register an implementation, add one entry to `REGISTRY` in
-`livesub/core/registry.py`:
+Add one entry to `REGISTRY` in `livesub/core/registry.py`:
 
 ```python
 REGISTRY: dict[str, str] = {
@@ -502,138 +491,10 @@ _INSTALL_HINTS = {
 }
 ```
 
-Error behaviour: `resolve()` raises `UnknownImplementation` for a name not in the
-registry and `MissingDependency` (with the install hint) when the module's imports
-fail. `build(impl, name=..., **kwargs)` constructs the instance, sets `.name`, and
-forwards `**kwargs` to `__init__`.
-
-### 8.2 Node config
-
-Wiring is declared in TOML `[[node]]` tables; no Python code change is needed to
-rewire the graph. There is no `module` key — the impl name alone identifies the class
-and its port declarations.
-
-| Key | Required | Description |
-|-----|----------|-------------|
-| `name` | no | Human label; defaults to `{impl}{index}` |
-| `impl` | yes | Registry impl name |
-| `in` | depends | Topic(s) to subscribe to (§8.3) |
-| `out` | depends | Topic(s) to publish to (§8.3) |
-| `mode` | no | Subscription mode: `"default"`, `"live"`, `"blocking"`, `"catchup"` |
-| `skip_if_finalized` | no | Topic to watch; skip incoming `Utterance`s whose segment was already finalised there (catchup only) |
-| `enabled` | no | `false` to disable without removing the node; default `true` |
-| *(other)* | — | Passed directly to the implementation's `__init__` as kwargs |
-
-### 8.3 Wiring `in` and `out`
-
-Both `in` and `out` accept three forms.
-
-**Single string** — bound to the module's sole declared port (error if the module
-declares none or several):
-
-```toml
-in  = "utterance.speech"
-out = "text.raw"
-```
-
-**List** — topics mapped **positionally** onto the declared ports, in the order the
-module declared them (§2). Reordering the list re-wires the node; there is no name
-matching in this form. When the module has exactly one input port, any number of
-topics creates a **fan-in** (all topics subscribe to that one port):
-
-```toml
-in = ["text.raw", "text.corrected", "text.out"]   # fan-in: all to one port
-```
-
-For `out`, the list must contain exactly one topic per declared output port — outputs
-never fan out implicitly. A `"_"` entry skips that port: it is left unwired, publishes
-nothing, and no bus topic is created for it. A topic produced only by a skipped port
-is unpublished; validation rejects any node subscribing to it:
-
-```toml
-out = ["_", "text.out"]   # skip the first declared port; wire the second
-```
-
-**Table** — explicit `port_name = "topic"` mapping, validated against the module's
-declarations:
-
-```toml
-[node.in]
-text_in = "text.raw"
-
-[node.out]
-corrected  = "text.corrected"
-translated = "text.out"
-```
-
-Port names are scoped to the module. Topic names carry no intrinsic meaning; routing
-follows from the payload type registered by the producing module's output port.
-
-### 8.4 Live + catchup nodes
-
-Two nodes may subscribe to the same input with different modes:
-
-```toml
-[[node]]
-name  = "asr_live"
-impl  = "faster_whisper"
-in    = "utterance.speech"
-mode  = "live"
-out   = "text.raw"
-
-[[node]]
-name              = "asr_quality"
-impl              = "faster_whisper"
-in                = "utterance.speech"
-mode              = "catchup"
-skip_if_finalized = "text.raw"
-out               = "text.raw"
-```
-
-The live node emits quickly at lower quality; the quality node catches up when
-capacity allows and emits higher-revision frames for the same `segment_id`s. The
-sink display contract (replace on higher revision, §7.4) handles progressive
-replacement automatically, and `skip_if_finalized` prevents the quality node from
-re-processing utterances the live node already finalised.
-
-### 8.5 Programmatic wiring
-
-`chain_config` builds a linear config from stage names in code:
-
-```python
-from livesub.core.config import chain_config
-
-cfg = chain_config(
-    stages=["wav", "segment", "asr", "correct", "translate"],
-    overrides={"asr": "mlx_whisper"},
-    sinks=["stdout_pretty", "jsonl"],
-)
-```
-
-The known chain stage names (`mic`, `ffmpeg`, `wav`, `segment`, `denoise`, `asr`,
-`correct`, `translate`) and their default impls belong to the built-in audio
-application. Omitting a stage (e.g. `["mic", "asr", "translate"]`) wires neighbours
-together directly. Sinks auto-subscribe to all text topics.
-
-### 8.6 Validation and diagram
-
-```python
-from livesub.core.graph import validate, mermaid
-
-validate(cfg)        # raises GraphError on invalid wiring
-print(mermaid(cfg))  # Mermaid flowchart LR string
-```
-
-Validation rules:
-
-1. No duplicate node names.
-2. At least one source node (a module with `inputs == {}`).
-3. Every declared output port in config must match the module's `outputs` declaration.
-4. Every topic read by a subscriber must be published by someone.
-5. A topic's payload type (from its publisher's output port) must match the
-   subscriber's input port type. **No prefix conventions** — a topic named `audio.foo`
-   carrying `Utterance` is valid.
-6. No cycles.
+`resolve()` raises `UnknownImplementation` for an unknown name and `MissingDependency`
+(with the install hint) when the module's imports fail. `build(impl, name=...,
+**kwargs)` constructs the instance, sets `.name`, and forwards `**kwargs` to
+`__init__`.
 
 ---
 
@@ -700,28 +561,7 @@ REGISTRY: dict[str, str] = {
 }
 ```
 
-### Step 3 — Wire it in config
-
-```toml
-[[node]]
-name = "gen"
-impl = "counter"
-out  = "numbers"
-
-[[node]]
-name = "x2"
-impl = "doubler"
-in   = "numbers"
-out  = "doubled"
-
-[[node]]
-name = "show"
-impl = "printer"
-in   = "doubled"
-```
-
-The `numbers` and `doubled` topics carry `int`, so both default to `"blocking"`
-mode (only `AudioFrame` topics default to `"live"`).
+How to wire modules into a pipeline is covered in the pipeline configuration guide.
 
 ### Checklist by shape
 
