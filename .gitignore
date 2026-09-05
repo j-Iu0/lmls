@@ -6,3 +6,4 @@ logs/
 .pytest_cache/
 .DS_Store
 .mp3
+.assets
