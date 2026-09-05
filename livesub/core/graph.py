@@ -211,6 +211,12 @@ class Graph:
             for port_name, topic in n.outputs.items():
                 self.bus.register_topic_type(topic, cls.outputs[port_name])
         self.nodes: list[BuiltNode] = [self._build_node(n) for n in cfg.active]
+        # Drivers such as ``livesub demo`` may warm a stage by calling its processing
+        # path before Graph.start(). Attach the reporter at construction time so model
+        # downloads and load failures from that warm-up are not silently lost.
+        if self._on_startup is not None:
+            for node in self.nodes:
+                node.stage._startup_reporter = self._on_startup
         self._tasks: list[asyncio.Task] = []
         self.started_at = 0.0
         # run() and external drivers (the demo pre-starts stages to warm models) may
@@ -258,8 +264,6 @@ class Graph:
         for node in self.nodes:
             if id(node) not in self._started:
                 self._started.add(id(node))
-                if self._on_startup is not None:
-                    node.stage._startup_reporter = self._on_startup
                 await node.stage.start()
 
     async def run(self, timeout: float | None = None) -> None:

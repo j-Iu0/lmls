@@ -159,8 +159,10 @@ visible warning instead of silently accepting it.
 
 Models are loaded and warmed **before** capture begins. `--buffer-mode live` stays current
 by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
-nothing. The catch-up mode is intentionally not available in the demo. See `livesub demo
---help` for model, logging, JSONL, WebSocket, timing, and statistics options.
+nothing. Startup events show model-loading progress before capture, and startup failures
+exit cleanly with the module's error. The catch-up mode is intentionally not available in
+the demo. See `livesub demo --help` for model, logging, JSONL, WebSocket, timing, and
+statistics options.
 
 ---
 
