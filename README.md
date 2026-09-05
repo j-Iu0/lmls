@@ -147,15 +147,16 @@ portable default), the corrected revision replaces that same line in
 place (marked `*`), and the Vietnamese fills the line beneath it. Each block shows its own
 end-of-speech-to-display delay.
 
-The demo does not read a config file. It uses a fixed variant of the default graph and
-only exposes deliberate choices. Use `--source mic` (the default) for a microphone, or
-`--source ffmpeg --input FILE_OR_URL` for anything ffmpeg can read. Repeat `--language`
-for simultaneous output, for example `--language vi --language zh`. Choose `--backend
-mlx`, `--backend whisper-ollama`, or `--backend cuda`; when omitted, the host is detected.
-CUDA currently means faster-whisper on CUDA plus Ollama for the language stages.
-Use `--model MODEL` to select the backend language model and `--asr-model MODEL` to
-override Whisper separately. A backend with a fixed model ignores `--model` with a
-visible warning instead of silently accepting it.
+It uses a fixed variant of the default graph and only exposes deliberate
+choices. Use `--source mic` (the default) for a microphone, or 
+`--source ffmpeg --input FILE_OR_URL` for anything ffmpeg can read. Choose the
+output language with `--language`, for example `--language vi` or
+`--language zh`. Choose `--backend mlx`, `--backend whisper-ollama`, or
+`--backend cuda`; when omitted, the host is detected. CUDA currently means
+faster-whisper on CUDA plus Ollama for the language stages. Use `--model MODEL`
+to select the backend language model and `--asr-model MODEL` to override Whisper
+separately. A backend with a fixed model ignores `--model` with a visible
+warning instead of silently accepting it.
 
 For ffmpeg inputs, the same file or URL is played aloud with `ffplay` while it is
 captioned; `--start` and `--seconds` apply to both paths. Use `--no-audio` to caption

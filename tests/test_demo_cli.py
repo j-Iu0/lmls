@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 import livesub.cli.demo as demo_module
@@ -9,7 +11,7 @@ from livesub.cli.demo import (
     BufferChoice,
     SourceChoice,
     _demo_config,
-    _languages,
+    _language,
     _play_ffmpeg_input,
     _selected_model,
     _startup_detail,
@@ -24,7 +26,7 @@ def build_demo(**overrides):
         "source_input": "lecture.mp4",
         "ffmpeg_device": False,
         "backend": BackendChoice.whisper_ollama,
-        "languages": ["vi"],
+        "target": "vi",
         "buffer": BufferChoice.live,
     }
     options.update(overrides)
@@ -53,15 +55,20 @@ def test_top_level_version_option():
     assert demo_result.output.strip() == "livesub 0.1.0"
 
 
-def test_demo_graph_is_built_in_and_supports_multiple_languages():
-    cfg = build_demo(languages=["vi", "zh"])
+def test_demo_graph_is_built_in_with_a_single_target():
+    cfg = build_demo()
     Graph(cfg)  # full graph validation and construction
 
     assert cfg.source_path is None
-    assert cfg.settings["languages"] == ["vi", "zh"]
-    translators = [n for n in cfg.nodes if n.name.startswith("translate_")]
-    assert [n.options["target"] for n in translators] == ["vi", "zh"]
-    assert all(n.inputs == {"text_in": "text.corrected"} for n in translators)
+    assert cfg.settings["target"] == "vi"
+    fused = cfg.node("fix_translate")
+    assert fused.impl == "fused_ollama"
+    assert fused.inputs == {"text_in": "text.raw"}
+    assert fused.outputs == {
+        "corrected": "text.corrected", "translated": "text.translation"
+    }
+    assert fused.options["target"] == "vi"
+    assert not [n for n in cfg.nodes if n.name.startswith("translate_")]
 
 
 def test_demo_backend_variants():
@@ -70,24 +77,21 @@ def test_demo_backend_variants():
     cuda = build_demo(backend=BackendChoice.cuda)
 
     assert mlx.node("asr").impl == "mlx_whisper"
-    assert mlx.node("fix").impl == "mlx_llm_corrector"
-    assert mlx.node("fix").options["model"] == "mlx-community/Qwen3.5-4B-4bit"
+    assert mlx.node("fix_translate").impl == "fused_llm"
+    assert mlx.node("fix_translate").options["model"] == "mlx-community/Qwen3.5-4B-4bit"
+    assert mlx.node("fix_translate").options["target"] == "vi"
     assert portable.node("asr").options["device"] == "auto"
-    assert portable.node("fix").impl == "ollama_corrector"
+    assert portable.node("fix_translate").impl == "fused_ollama"
     assert cuda.node("asr").options == {
         "model": "small.en", "device": "cuda", "compute_type": "float16"
     }
-    assert cuda.node("fix").impl == "ollama_corrector"
+    assert cuda.node("fix_translate").impl == "fused_ollama"
 
 
-def test_model_selection_is_applied_to_every_language_stage():
+def test_model_selection_is_applied_to_the_fused_stage():
     cfg = build_demo(llm_model="my-model")
 
-    language_nodes = [
-        node for node in cfg.nodes
-        if node.name == "fix" or node.name.startswith("translate_")
-    ]
-    assert {node.options["model"] for node in language_nodes} == {"my-model"}
+    assert cfg.node("fix_translate").options["model"] == "my-model"
 
 
 def test_unsupported_model_selection_is_ignored_with_a_warning(monkeypatch, capsys):
@@ -108,8 +112,10 @@ def test_demo_buffer_mode_never_uses_catchup():
     assert all(n.mode != "catchup" for n in live.nodes + block.nodes)
 
 
-def test_language_flags_are_repeatable_comma_aware_and_deduplicated():
-    assert _languages(["vi, zh", "vi", "FR"]) == ["vi", "zh", "fr"]
+def test_language_flag_is_normalised_and_required():
+    assert _language(" VI ") == "vi"
+    with pytest.raises(typer.BadParameter):
+        _language("  ")
 
 
 def test_startup_event_detail_includes_message_and_progress():

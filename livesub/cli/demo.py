@@ -2,7 +2,7 @@
 
 Unlike ``livesub run``, the demo never reads a graph config.  It builds one known-good
 variant of the default pipeline and exposes only the choices that make sense while a
-demo is running: capture source, compute backend, output languages and queue policy.
+demo is running: capture source, compute backend, output language and queue policy.
 """
 
 from __future__ import annotations
@@ -72,17 +72,12 @@ def _detect_backend() -> BackendChoice:
     return BackendChoice.whisper_ollama
 
 
-def _languages(values: list[str]) -> list[str]:
-    """Accept repeated flags as well as the convenient ``vi,zh`` spelling."""
-    result: list[str] = []
-    for value in values:
-        for language in value.split(","):
-            language = language.strip().lower()
-            if language and language not in result:
-                result.append(language)
-    if not result:
-        raise typer.BadParameter("select at least one output language")
-    return result
+def _language(value: str) -> str:
+    """Normalise the single output language code."""
+    language = value.strip().lower()
+    if not language:
+        raise typer.BadParameter("select an output language")
+    return language
 
 
 def _version_callback(value: bool) -> None:
@@ -112,7 +107,7 @@ def _demo_config(
     source_input: str | None,
     ffmpeg_device: bool,
     backend: BackendChoice,
-    languages: list[str],
+    target: str,
     buffer: BufferChoice,
     asr_model: str | None = None,
     llm_model: str | None = None,
@@ -144,15 +139,11 @@ def _demo_config(
         source_options = {"device": source_input or "default"}
 
     if backend is BackendChoice.mlx:
-        asr_impl, correct_impl, translate_impl = (
-            "mlx_whisper", "mlx_llm_corrector", "mlx_llm_translator"
-        )
+        asr_impl, fused_impl = ("mlx_whisper", "fused_llm")
         asr_options = {"model": asr_model or _MLX_ASR_MODEL}
         llm_options = {"model": llm_model or _MLX_LLM_MODEL}
     else:
-        asr_impl, correct_impl, translate_impl = (
-            "faster_whisper", "ollama_corrector", "ollama_translator"
-        )
+        asr_impl, fused_impl = ("faster_whisper", "fused_ollama")
         asr_options = {
             "model": asr_model or _WHISPER_MODEL,
             "device": "cuda" if backend is BackendChoice.cuda else "auto",
@@ -176,31 +167,22 @@ def _demo_config(
             name="asr", impl=asr_impl, inputs={"audio": "utterance.speech"},
             outputs={"text": "text.raw"}, options=asr_options, mode=mode,
         ),
-        NodeConfig(
-            name="fix", impl=correct_impl, inputs={"text_in": "text.raw"},
-            outputs={"text_out": "text.corrected"}, options=dict(llm_options),
-            mode=mode,
-        ),
     ]
 
-    text_topics = ["text.raw", "text.corrected"]
-    for index, language in enumerate(languages):
-        topic = f"text.translation.{index}"
-        nodes.append(
-            NodeConfig(
-                name=f"translate_{index}_{language.replace('-', '_')}",
-                impl=translate_impl,
-                inputs={"text_in": "text.corrected"},
-                outputs={"text_out": topic},
-                options={**llm_options, "target": language},
-                mode=mode,
-            )
+    nodes.append(
+        NodeConfig(
+            name="fix_translate", impl=fused_impl,
+            inputs={"text_in": "text.raw"},
+            outputs={"corrected": "text.corrected", "translated": "text.translation"},
+            options={**llm_options, "target": target},
+            mode=mode,
         )
-        text_topics.append(topic)
+    )
 
     sink_inputs = {
-        "text" if i == 0 else f"text_{i}": topic
-        for i, topic in enumerate(text_topics)
+        "text": "text.raw",
+        "text_0": "text.corrected",
+        "text_1": "text.translation",
     }
     nodes.append(
         NodeConfig(
@@ -227,7 +209,7 @@ def _demo_config(
         nodes=nodes,
         settings={
             "backend": backend.value,
-            "languages": languages,
+            "target": target,
             "buffer_mode": buffer.value,
         },
     )
@@ -334,9 +316,9 @@ def register(app: typer.Typer) -> None:
         backend: Optional[BackendChoice] = typer.Option(
             None, help="Compute backend; omitted means detect from this host."
         ),
-        language: list[str] = typer.Option(
-            ["vi"], "--language", "--target", "-l",
-            help="Output language; repeat the flag or use a comma-separated list.",
+        language: str = typer.Option(
+            "vi", "--language", "--target", "-l",
+            help="Output language.",
         ),
         buffer_mode: BufferChoice = typer.Option(
             "live", help="Queue policy: live or block."
@@ -387,7 +369,7 @@ def register(app: typer.Typer) -> None:
         )
         selected_backend = backend or _detect_backend()
         selected_llm_model = _selected_model(selected_backend, llm_model)
-        targets = _languages(language)
+        target = _language(language)
         if seconds < 0:
             raise typer.BadParameter("--seconds must be zero or greater")
         if start < 0:
@@ -400,7 +382,7 @@ def register(app: typer.Typer) -> None:
             source_input=source_input,
             ffmpeg_device=ffmpeg_device,
             backend=selected_backend,
-            languages=targets,
+            target=target,
             buffer=buffer_mode,
             asr_model=asr_model,
             llm_model=selected_llm_model,
@@ -456,7 +438,7 @@ def register(app: typer.Typer) -> None:
                         )
                 typer.secho(
                     f"demo: {source.value} | {selected_backend.value} | "
-                    f"{', '.join(lang.upper() for lang in targets)} | "
+                    f"{target.upper()} | "
                     f"buffer={buffer_mode.value} | Ctrl-C to stop\n",
                     fg=typer.colors.BLUE,
                     err=True,
