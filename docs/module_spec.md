@@ -195,16 +195,20 @@ Contract details:
 - **Shutdown is cooperative cancellation.** The runner cancels each node's task and
   then calls `stop()`. Modules must let `asyncio.CancelledError` propagate (§5,
   constraint 3) and must not assume `process()` completes the item it was working on.
-- **`start()` progress reporting.** A module doing heavy work (model download, remote
-  handshake) can call `self._report_startup(phase, message, progress)` to emit
-  `StartupEvent` objects to an observer. `phase` is a `StartupPhase` enum:
-  `IN_PROGRESS` (may fire multiple times), `READY`, or `FAILED`. The optional
-  `progress` field is a `StartupProgress(current, total, unit)`; `fraction` is a
-  derived property. All fields are optional — pass `None` when progress is
-  indeterminate. The callback is set by `Graph` (via `on_startup=` at
-  construction) and may be called from a worker thread; callers that need async
-  dispatch must use `loop.call_soon_threadsafe()`. The mechanism is opt-in: a
-  module that never calls `_report_startup()` is silent.
+- **`start()` progress reporting.** A module doing heavy work (model download,
+  remote handshake) can call `self._report_startup(phase, message, progress)` to
+  emit `StartupEvent` objects to an observer.
+  - `phase` is a `StartupPhase` enum: `IN_PROGRESS` (may fire multiple times),
+    `READY`, or `FAILED`. The optional
+  - `progress` field is a `StartupProgress(current, total, unit)`; `fraction` is
+    a derived property. All fields are optional — pass `None` when progress is
+    indeterminate.
+  - The callback is set by `Graph` (via `on_startup=` at construction) and may
+    be called from a worker thread; callers that need async dispatch must use
+    `loop.call_soon_threadsafe()`.
+  - The mechanism is opt-in: a module that never calls `_report_startup()` is
+    silent.
+  - The reports have no effect on runner. It is purely a telemetry channel.
 - `describe(self) -> dict` returns a dict shown in graph diagrams and bench
   reports.
   The base implementation reports module class, name, and port declarations. Override
