@@ -10,6 +10,7 @@ from livesub.cli.demo import (
     SourceChoice,
     _demo_config,
     _languages,
+    _play_ffmpeg_input,
     _selected_model,
     _startup_detail,
 )
@@ -120,3 +121,35 @@ def test_startup_event_detail_includes_message_and_progress():
     )
 
     assert _startup_detail(event) == "downloading model | 25/100 MB (25%)"
+
+
+def test_ffmpeg_playback_uses_the_same_input_and_slice(monkeypatch):
+    launched: list[tuple[list[str], dict]] = []
+
+    class Process:
+        pass
+
+    monkeypatch.setattr(demo_module.shutil, "which", lambda name: "/bin/ffplay")
+    monkeypatch.setattr(
+        demo_module.subprocess,
+        "Popen",
+        lambda command, **kwargs: launched.append((command, kwargs)) or Process(),
+    )
+
+    player = _play_ffmpeg_input(
+        "lecture.mp3", device=False, start=12.5, seconds=30.0
+    )
+
+    assert isinstance(player, Process)
+    assert launched[0][0] == [
+        "/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
+        "-ss", "12.5", "-i", "lecture.mp3", "-t", "30.0",
+    ]
+
+
+def test_ffmpeg_playback_is_optional_when_ffplay_is_missing(monkeypatch):
+    monkeypatch.setattr(demo_module.shutil, "which", lambda name: None)
+
+    assert _play_ffmpeg_input(
+        "https://example.com/live.m3u8", device=False, start=0, seconds=0
+    ) is None

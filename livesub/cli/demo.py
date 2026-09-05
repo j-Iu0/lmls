@@ -11,6 +11,7 @@ import asyncio
 import logging
 import platform
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -286,6 +287,37 @@ def _startup_detail(event: StartupEvent) -> str:
     return " | ".join(parts)
 
 
+def _play_ffmpeg_input(
+    source_input: str,
+    *,
+    device: bool,
+    start: float,
+    seconds: float,
+) -> subprocess.Popen[Any] | None:
+    """Play the same ffmpeg input alongside the caption pipeline."""
+    ffplay = shutil.which("ffplay")
+    if ffplay is None:
+        return None
+
+    command = [ffplay, "-nodisp", "-autoexit", "-loglevel", "quiet"]
+    if device:
+        from ..input.ffmpeg_source import FfmpegSource
+
+        resolved = FfmpegSource._resolve_device(source_input, "ffmpeg")
+        command += ["-f", "avfoundation", "-i", resolved]
+    else:
+        if start:
+            command += ["-ss", str(start)]
+        command += ["-i", source_input]
+    if seconds:
+        command += ["-t", str(seconds)]
+    return subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def register(app: typer.Typer) -> None:
     @app.command()
     def demo(
@@ -333,6 +365,9 @@ def register(app: typer.Typer) -> None:
         ),
         websocket_port: Optional[int] = typer.Option(
             None, help="Also publish subtitle events over WebSocket."
+        ),
+        audio: bool = typer.Option(
+            True, help="Play ffmpeg input aloud while it is captioned."
         ),
         warm: bool = typer.Option(True, help="Warm models before capture starts."),
         stats: bool = typer.Option(True, help="Print latency statistics on exit."),
@@ -393,20 +428,44 @@ def register(app: typer.Typer) -> None:
         graph = Graph(cfg, on_startup=on_startup)
 
         async def go() -> None:
-            if warm:
-                typer.secho("warming models...", fg=typer.colors.BLUE, err=True)
-                elapsed = await _warm(graph)
+            player: subprocess.Popen[Any] | None = None
+            try:
+                if warm:
+                    typer.secho("warming models...", fg=typer.colors.BLUE, err=True)
+                    elapsed = await _warm(graph)
+                    typer.secho(
+                        f"models warm in {elapsed:.1f}s", fg=typer.colors.GREEN, err=True
+                    )
+                # Complete startup before audible playback. This avoids playing ahead
+                # while a cold model is still loading; Graph.run() will reuse the
+                # already-started stages.
+                await graph.start()
+                if source is SourceChoice.ffmpeg and audio:
+                    assert source_input is not None  # validated by _demo_config
+                    player = _play_ffmpeg_input(
+                        source_input,
+                        device=ffmpeg_device,
+                        start=start,
+                        seconds=seconds,
+                    )
+                    if player is None:
+                        typer.secho(
+                            "warning: ffplay not found; captioning without audio playback",
+                            fg=typer.colors.YELLOW,
+                            err=True,
+                        )
                 typer.secho(
-                    f"models warm in {elapsed:.1f}s", fg=typer.colors.GREEN, err=True
+                    f"demo: {source.value} | {selected_backend.value} | "
+                    f"{', '.join(lang.upper() for lang in targets)} | "
+                    f"buffer={buffer_mode.value} | Ctrl-C to stop\n",
+                    fg=typer.colors.BLUE,
+                    err=True,
                 )
-            typer.secho(
-                f"demo: {source.value} | {selected_backend.value} | "
-                f"{', '.join(lang.upper() for lang in targets)} | "
-                f"buffer={buffer_mode.value} | Ctrl-C to stop\n",
-                fg=typer.colors.BLUE,
-                err=True,
-            )
-            await graph.run(timeout=seconds or None)
+                await graph.run(timeout=seconds or None)
+            finally:
+                if player is not None and player.poll() is None:
+                    player.terminate()
+                await graph.aclose()
 
         try:
             asyncio.run(go())

@@ -157,6 +157,10 @@ Use `--model MODEL` to select the backend language model and `--asr-model MODEL`
 override Whisper separately. A backend with a fixed model ignores `--model` with a
 visible warning instead of silently accepting it.
 
+For ffmpeg inputs, the same file or URL is played aloud with `ffplay` while it is
+captioned; `--start` and `--seconds` apply to both paths. Use `--no-audio` to caption
+silently. Microphone input is not played back, avoiding an acoustic feedback loop.
+
 Models are loaded and warmed **before** capture begins. `--buffer-mode live` stays current
 by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
 nothing. Startup events show model-loading progress before capture, and startup failures
