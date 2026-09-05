@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
+import livesub.cli.demo as demo_module
 from livesub.cli.__main__ import app
 from livesub.cli.demo import (
     BackendChoice,
@@ -9,6 +10,7 @@ from livesub.cli.demo import (
     SourceChoice,
     _demo_config,
     _languages,
+    _selected_model,
 )
 from livesub.core.graph import Graph
 
@@ -33,6 +35,7 @@ def test_demo_help_exposes_choices_but_not_graph_config():
     assert "--source" in result.output
     assert "cuda" in result.output
     assert "--buffer-mode" in result.output
+    assert "--model" in result.output
     assert "--config" not in result.output
 
 
@@ -71,6 +74,25 @@ def test_demo_backend_variants():
         "model": "small.en", "device": "cuda", "compute_type": "float16"
     }
     assert cuda.node("fix").impl == "ollama_corrector"
+
+
+def test_model_selection_is_applied_to_every_language_stage():
+    cfg = build_demo(llm_model="my-model")
+
+    language_nodes = [
+        node for node in cfg.nodes
+        if node.name == "fix" or node.name.startswith("translate_")
+    ]
+    assert {node.options["model"] for node in language_nodes} == {"my-model"}
+
+
+def test_unsupported_model_selection_is_ignored_with_a_warning(monkeypatch, capsys):
+    monkeypatch.setattr(demo_module, "_MODEL_SELECTABLE_BACKENDS", frozenset())
+
+    assert _selected_model(BackendChoice.cuda, "unsupported-model") is None
+    warning = capsys.readouterr().err
+    assert "does not support model selection" in warning
+    assert "ignoring --model 'unsupported-model'" in warning
 
 
 def test_demo_buffer_mode_never_uses_catchup():
