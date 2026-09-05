@@ -9,7 +9,7 @@ without Apple Silicon, and the benchmark reports both so the claim is measured r
 than repeated.
 
 Model sizing for a live lecture on 16 GB: ``whisper-small.en`` (~0.5 GB) leaves room for
-the 4-bit Qwen3 used by the correction stage (~2.5 GB) and comfortably beats realtime.
+the 4-bit Qwen3.5 used by the correction stage (~3.1 GB) and comfortably beats realtime.
 ``distil-large-v3`` is more accurate and still usable; ``large-v3`` is not, once the LLM
 is resident too.
 

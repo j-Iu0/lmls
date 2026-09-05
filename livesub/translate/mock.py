@@ -1,6 +1,6 @@
 """Deterministic stand-in translator -- no model, no network.
 
-Lets the graph, sinks, WebSocket schema and tests be exercised without loading a 2.5 GB
+Lets the graph, sinks, WebSocket schema and tests be exercised without loading a multi-GB
 model. It marks its output unmistakably (a ``[vi]`` prefix and a small real glossary) so
 mock output can never be mistaken for a real translation in a screenshot or a demo.
 

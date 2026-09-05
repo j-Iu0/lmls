@@ -45,9 +45,8 @@ def similarity(a: str, b: str) -> float:
 
 class MlxLlmCorrector(Module):
     """Args:
-        model: mlx-community repo id. Must be a non-thinking instruct model -- a
-            reasoning model emits hundreds of tokens before the answer and cannot meet
-            the latency budget.
+        model: mlx-community repo id. Thinking is disabled by the shared engine because
+            reasoning tokens cannot meet the live latency budget.
         max_tokens: hard cap on generation. Correction output is about as long as the
             input, so this bounds worst-case latency.
         min_similarity: reject a correction sharing less than this fraction of words with

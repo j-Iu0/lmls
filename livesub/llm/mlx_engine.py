@@ -6,7 +6,7 @@ runner sits in a neutral place both can depend on, like ``core``.
 
 Two things here earn their keep:
 
-**One model, loaded once, shared.** A 4-bit 4B model is ~2.5 GB. Wiring a corrector and a
+**One model, loaded once, shared.** The 4-bit 4B model is ~3.1 GB. Wiring a corrector and a
 translator as separate nodes must not load it twice on a 16 GB machine, so instances are
 cached by model id. This is what makes the split correct-then-translate configuration
 merely *slower* than the fused one rather than impossible.
@@ -19,7 +19,7 @@ benchmark is there to expose.
 Latency notes for the report: generation time is dominated by *output* tokens, not input.
 That is the whole reason the prompts here demand terse JSON and cap ``max_tokens`` -- a
 model that decides to explain its reasoning costs seconds, not milliseconds. Qwen3
-"Instruct-2507" variants are the non-thinking ones; a thinking model would emit hundreds
+Qwen 3.5's thinking mode is disabled in its chat template; otherwise it can emit hundreds
 of reasoning tokens before the answer and cannot meet the budget at all.
 """
 
@@ -35,7 +35,7 @@ from typing import Any
 
 log = logging.getLogger("livesub.llm")
 
-DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+DEFAULT_MODEL = "mlx-community/Qwen3.5-4B-4bit"
 
 _CACHE: dict[str, "MlxEngine"] = {}
 _CACHE_LOCK = threading.Lock()
@@ -106,6 +106,7 @@ class MlxEngine:
              {"role": "user", "content": user}],
             add_generation_prompt=True,
             tokenize=False,
+            enable_thinking=False,
         )
         t0 = time.perf_counter()
         with self._lock:  # MLX generation is not safe to run concurrently

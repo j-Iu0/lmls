@@ -57,7 +57,7 @@ pip install -r requirements-mlx.txt
 python -m livesub run --config config/mlx.toml
 ```
 
-First run downloads ~2.3 GB (Qwen3-4B 4-bit) alongside the Whisper weights above.
+First run downloads ~3.1 GB (Qwen3.5-4B 4-bit) alongside the Whisper weights above.
 Everything after that runs offline. The adapters work standalone too:
 
 ```bash

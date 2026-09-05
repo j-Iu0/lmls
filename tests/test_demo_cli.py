@@ -68,6 +68,7 @@ def test_demo_backend_variants():
 
     assert mlx.node("asr").impl == "mlx_whisper"
     assert mlx.node("fix").impl == "mlx_llm_corrector"
+    assert mlx.node("fix").options["model"] == "mlx-community/Qwen3.5-4B-4bit"
     assert portable.node("asr").options["device"] == "auto"
     assert portable.node("fix").impl == "ollama_corrector"
     assert cuda.node("asr").options == {

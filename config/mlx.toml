@@ -3,7 +3,7 @@
 # as separate nodes -- but the implementations are the Metal-accelerated ones, which
 # measured faster per line than the Ollama server path (docs/architecture.md 2.5/2.6).
 # Requires macOS on Apple Silicon; everything is downloaded into ~/.cache/huggingface on
-# first run (~0.5 GB Whisper, ~2.3 GB Qwen3-4B 4-bit) and runs offline after that.
+# first run (~0.5 GB Whisper, ~3.1 GB Qwen3.5-4B 4-bit) and runs offline after that.
 #
 #   livesub run --config config/mlx.toml
 #   livesub graph --config config/mlx.toml --mermaid
@@ -42,7 +42,7 @@ name = "fix"
 impl = "mlx_llm_corrector"
 in = "text.raw"
 out = "text.corrected"
-model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+model = "mlx-community/Qwen3.5-4B-4bit"
 
 # ── translation ────────────────────────────────────────────────────────────────
 [[node]]
@@ -51,7 +51,7 @@ impl = "mlx_llm_translator"
 in = "text.corrected"
 out = { text_out = "text.out" }
 target = "vi"
-model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+model = "mlx-community/Qwen3.5-4B-4bit"
 
 # ── display ────────────────────────────────────────────────────────────────────
 [[node]]

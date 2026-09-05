@@ -52,7 +52,7 @@ class LogLevel(str, Enum):
 
 
 _MLX_ASR_MODEL = "mlx-community/whisper-small.en-mlx"
-_MLX_LLM_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+_MLX_LLM_MODEL = "mlx-community/Qwen3.5-4B-4bit"
 _WHISPER_MODEL = "small.en"
 _OLLAMA_MODEL = "qwen3.5:4b"
 _OLLAMA_HOST = "http://localhost:11434"
