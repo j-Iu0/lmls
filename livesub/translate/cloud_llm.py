@@ -19,6 +19,7 @@ from dataclasses import replace
 from typing import Any, ClassVar
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import TextFrame
 from ..llm.cloud_engine import get_cloud_engine
 from ..llm.prompts import (
@@ -68,11 +69,20 @@ class CloudLlmTranslator(Module):
         await asyncio.get_running_loop().run_in_executor(None, self._load)
 
     def _load(self):
-        if self._engine is None:
+        if self._engine is not None:
+            return self._engine
+        self._report_startup(
+            StartupPhase.IN_PROGRESS, f"initialising {self.provider} client"
+        )
+        try:
             self._engine = get_cloud_engine(
                 self.provider, self.model, api_key=self.api_key,
                 max_tokens=self.max_tokens, timeout=self.timeout,
             )
+            self._report_startup(StartupPhase.READY)
+        except Exception as exc:
+            self._report_startup(StartupPhase.FAILED, str(exc))
+            raise
         return self._engine
 
     def _run_sync(self, text: str, target: str, context: list[str], repair: bool

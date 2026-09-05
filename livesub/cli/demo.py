@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -43,6 +44,7 @@ from ..core.audioutil import save_wav
 from ..core.config import load_config
 from ..core.graph import Graph
 from ..core.registry import resolve
+from ..core.startup import StartupEvent, StartupPhase
 from ..core.types import SAMPLE_RATE, AudioFrame, TextFrame, Utterance
 
 
@@ -149,11 +151,32 @@ def register(app: typer.Typer) -> None:
             if (node.impl.endswith(("_corrector", "_translator"))
                     or node.impl.startswith("fused")) and model:
                 node.options["model"] = model
-        graph = Graph(cfg)
+
+        _print_lock = threading.Lock()
+
+        def _on_startup(event: StartupEvent) -> None:
+            if event.phase == StartupPhase.IN_PROGRESS:
+                color = typer.colors.BLUE
+                prefix = "  ..."
+            elif event.phase == StartupPhase.READY:
+                color = typer.colors.GREEN
+                prefix = "  ok "
+            else:  # FAILED
+                color = typer.colors.RED
+                prefix = "  ERR"
+            detail = f" {event.message}" if event.message else ""
+            with _print_lock:
+                typer.secho(
+                    f"{prefix} [{event.module_name}]{detail}",
+                    fg=color, err=True,
+                )
+
+        graph = Graph(cfg, on_startup=_on_startup)
 
         async def go() -> None:
             # graph.start(), not node.stage.start(): it records what was started, so
             # graph.run() below will not start (and re-bind / re-load) anything twice.
+            typer.secho("loading modules...", fg=typer.colors.BLUE, err=True)
             await graph.start()
             typer.secho(
                 "loading models (playback starts once they are warm)...",

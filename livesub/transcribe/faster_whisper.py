@@ -29,6 +29,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import SAMPLE_RATE, AudioFrame, Lineage, TextFrame, Utterance
 from ..segment import make_segmenter
 from .mlx_whisper import looks_hallucinated
@@ -79,13 +80,21 @@ class FasterWhisperTranscriber(Module):
     def _load(self):
         if self._model is not None:
             return self._model
-        from faster_whisper import WhisperModel
-
-        self._model = WhisperModel(
-            self.model, device=self.device, compute_type=self.compute_type
+        self._report_startup(
+            StartupPhase.IN_PROGRESS, f"loading faster-whisper/{self.model}"
         )
-        log.info("faster-whisper %s (%s/%s) ready", self.model, self.device,
-                 self.compute_type)
+        try:
+            from faster_whisper import WhisperModel
+
+            self._model = WhisperModel(
+                self.model, device=self.device, compute_type=self.compute_type
+            )
+            log.info("faster-whisper %s (%s/%s) ready", self.model, self.device,
+                     self.compute_type)
+            self._report_startup(StartupPhase.READY)
+        except Exception as exc:
+            self._report_startup(StartupPhase.FAILED, str(exc))
+            raise
         return self._model
 
     def _decode(self, pcm: np.ndarray, is_final: bool) -> str:

@@ -17,6 +17,7 @@ import numpy as np
 
 from ..core.audioutil import resample
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import SAMPLE_RATE, AudioFrame
 
 _DF_RATE = 48_000  # DeepFilterNet is trained at 48 kHz
@@ -54,6 +55,10 @@ class DeepFilterNetDenoiser(Module):
         self._chunk = int(SAMPLE_RATE * chunk_ms / 1000)
         self._in_buf = np.zeros(0, dtype=np.float32)
         self._out_buf = np.zeros(0, dtype=np.float32)
+
+    async def start(self) -> None:
+        # Model loaded during __init__; just signal readiness.
+        self._report_startup(StartupPhase.READY)
 
     @property
     def latency_ms(self) -> float:

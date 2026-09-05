@@ -21,6 +21,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import AudioFrame, Utterance
 from .base import Segmenter, SegmenterConfig
 
@@ -100,6 +101,10 @@ class SileroSegmenter(Module):
         config = SegmenterConfig(**{k: v for k, v in kwargs.items() if k in timing_keys})
         rest = {k: v for k, v in kwargs.items() if k not in timing_keys}
         self._inner = _SileroSegmenterImpl(config, **rest)
+
+    async def start(self) -> None:
+        # Model loaded during __init__; just signal readiness.
+        self._report_startup(StartupPhase.READY)
 
     def process(self, frame: AudioFrame) -> list[Utterance]:
         return list(self._inner.push(frame))

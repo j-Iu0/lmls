@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
+from .startup import StartupCallback, StartupEvent, StartupPhase, StartupProgress
 from .types import AudioFrame, FRAME_SAMPLES
 
 
@@ -54,10 +55,35 @@ class Module(ABC):
         # instance variable so subclasses that call super().__init__() see a real
         # string, not the class-level fallback.
         self.name: str = "unnamed"
+        # Set by Graph before start() is called.  None means no listener.
+        # May be called from a worker thread — callbacks must be thread-safe.
+        self._startup_reporter: StartupCallback | None = None
 
     async def start(self) -> None:  # pragma: no cover - trivial default
         """Called once before data flows. Load models, open devices, bind ports."""
         return None
+
+    def _report_startup(
+        self,
+        phase: StartupPhase,
+        message: str = "",
+        progress: StartupProgress | None = None,
+    ) -> None:
+        """Emit a :class:`~livesub.core.startup.StartupEvent` to the registered
+        callback, if any.
+
+        Call this from ``_load()`` or ``start()`` to report cold-start progress.
+        Safe to call from a worker thread.
+        """
+        if self._startup_reporter is not None:
+            self._startup_reporter(
+                StartupEvent(
+                    module_name=self.name,
+                    phase=phase,
+                    message=message,
+                    progress=progress,
+                )
+            )
 
     async def stop(self) -> None:  # pragma: no cover - trivial default
         """Called after all data is processed. Release resources, flush buffers,

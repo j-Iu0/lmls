@@ -32,6 +32,7 @@ from dataclasses import replace
 from typing import Any, ClassVar
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import TextFrame
 from ..llm.mlx_engine import DEFAULT_MODEL, get_engine
 from ..llm.prompts import (
@@ -87,8 +88,20 @@ class MlxLlmTranslator(Module):
         await asyncio.get_running_loop().run_in_executor(None, self._load)
 
     def _load(self):
-        if self._engine is None:
+        if self._engine is not None:
+            return self._engine
+        from ..llm.mlx_engine import _CACHE
+        cached = self.model in _CACHE
+        self._report_startup(
+            StartupPhase.IN_PROGRESS,
+            f"{'loading from cache' if cached else 'downloading'} {self.model}",
+        )
+        try:
             self._engine = get_engine(self.model, max_tokens=self.max_tokens)
+            self._report_startup(StartupPhase.READY)
+        except Exception as exc:
+            self._report_startup(StartupPhase.FAILED, str(exc))
+            raise
         return self._engine
 
     def _run_sync(self, text: str, target: str, context: list[str], repair: bool

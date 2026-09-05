@@ -41,6 +41,7 @@ from typing import Any, ClassVar
 import numpy as np
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import SAMPLE_RATE, AudioFrame, Lineage, TextFrame, Utterance
 from ..segment import make_segmenter
 
@@ -113,10 +114,19 @@ class MlxWhisperTranscriber(Module):
     def _load(self) -> None:
         if self._mlx is not None:
             return
-        import mlx_whisper  # noqa: F401  -- import cost is the model-independent part
+        self._report_startup(
+            StartupPhase.IN_PROGRESS,
+            f"importing mlx_whisper; {self.model} weights load on first call",
+        )
+        try:
+            import mlx_whisper  # noqa: F401  -- import cost is the model-independent part
 
-        self._mlx = mlx_whisper
-        log.info("mlx-whisper ready (model %s loads on first call)", self.model)
+            self._mlx = mlx_whisper
+            log.info("mlx-whisper ready (model %s loads on first call)", self.model)
+            self._report_startup(StartupPhase.READY)
+        except Exception as exc:
+            self._report_startup(StartupPhase.FAILED, str(exc))
+            raise
 
     def _decode(self, pcm: np.ndarray, is_final: bool) -> str:
         if len(pcm) < SAMPLE_RATE * self.min_utterance_ms / 1000:

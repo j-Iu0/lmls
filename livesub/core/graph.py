@@ -28,6 +28,7 @@ from .config import GraphConfig, NodeConfig
 from .interfaces import Module
 from .metrics import Metrics
 from .registry import build, resolve
+from .startup import StartupCallback
 from .types import AudioFrame, TextFrame
 
 log = logging.getLogger("livesub.graph")
@@ -194,9 +195,11 @@ def _tid(topic: str) -> str:
 class Graph:
     """A built, runnable graph."""
 
-    def __init__(self, cfg: GraphConfig, bus: Bus | None = None):
+    def __init__(self, cfg: GraphConfig, bus: Bus | None = None,
+                 on_startup: StartupCallback | None = None):
         self.config = cfg
         self.bus = bus or Bus()
+        self._on_startup = on_startup
         self.warnings = validate(cfg)
         for w in self.warnings:
             log.warning("%s", w)
@@ -255,6 +258,8 @@ class Graph:
         for node in self.nodes:
             if id(node) not in self._started:
                 self._started.add(id(node))
+                if self._on_startup is not None:
+                    node.stage._startup_reporter = self._on_startup
                 await node.stage.start()
 
     async def run(self, timeout: float | None = None) -> None:

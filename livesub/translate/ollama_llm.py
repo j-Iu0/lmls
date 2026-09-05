@@ -25,6 +25,7 @@ from dataclasses import replace
 from typing import Any, ClassVar
 
 from ..core.interfaces import Module
+from ..core.startup import StartupPhase
 from ..core.types import TextFrame
 from ..llm.ollama_engine import DEFAULT_HOST, DEFAULT_MODEL, get_ollama_engine
 from ..llm.prompts import TRANSLATE_SYSTEM, language_name, translate_user
@@ -79,13 +80,22 @@ class OllamaLlmTranslator(Module):
         await asyncio.get_running_loop().run_in_executor(None, self._load)
 
     def _load(self):
-        if self._engine is None:
+        if self._engine is not None:
+            return self._engine
+        self._report_startup(
+            StartupPhase.IN_PROGRESS, f"connecting to Ollama at {self.host}"
+        )
+        try:
             engine = get_ollama_engine(
                 self.model, host=self.host, max_tokens=self.max_tokens,
                 timeout=self.timeout, think=self.think,
             )
             engine.verify()  # once, loudly; later failures degrade quietly
             self._engine = engine
+            self._report_startup(StartupPhase.READY)
+        except Exception as exc:
+            self._report_startup(StartupPhase.FAILED, str(exc))
+            raise
         return self._engine
 
     def _translate_sync(self, text: str, target: str, context: list[str]) -> str:
