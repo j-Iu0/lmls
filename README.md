@@ -135,10 +135,11 @@ appears in `livesub devices` and is selected by name.
 
 ## Live demonstration
 
-Play a lecture aloud and caption it in the terminal at the same time:
+Run the fixed demonstration pipeline from a media file:
 
 ```bash
-python -m livesub demo --in lecture.mp3 --target vi --start 240 --seconds 90
+python -m livesub demo --source ffmpeg --input lecture.mp3 --language vi \
+  --start 240 --seconds 90
 ```
 
 English appears in about a second on the Apple Silicon wiring (a little longer on the
@@ -146,16 +147,17 @@ portable default), the corrected revision replaces that same line in
 place (marked `*`), and the Vietnamese fills the line beneath it. Each block shows its own
 end-of-speech-to-display delay.
 
-Models are loaded and warmed **before** playback begins. Otherwise the first several
-subtitles would be late by the model load time and the delay on screen would be measuring
-the loader rather than the pipeline.
+The demo does not read a config file. It uses a fixed variant of the default graph and
+only exposes deliberate choices. Use `--source mic` (the default) for a microphone, or
+`--source ffmpeg --input FILE_OR_URL` for anything ffmpeg can read. Repeat `--language`
+for simultaneous output, for example `--language vi --language zh`. Choose `--backend
+mlx`, `--backend whisper-ollama`, or `--backend cuda`; when omitted, the host is detected.
+CUDA currently means faster-whisper on CUDA plus Ollama for the language stages.
 
-`--no-audio` runs it silently, `--target zh` switches language, `--seconds 0` plays the
-whole file, and `-c config/mlx.toml` demonstrates the Apple Silicon wiring. The player and
-the pipeline read the same normalised audio, started together — the pipeline does not
-listen to the speakers, which would add the sound card's latency to the number being
-demonstrated. To caption real speaker output instead (a video call, a browser tab), use
-the loopback device path above.
+Models are loaded and warmed **before** capture begins. `--buffer-mode live` stays current
+by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
+nothing. The catch-up mode is intentionally not available in the demo. See `livesub demo
+--help` for model, logging, JSONL, WebSocket, timing, and statistics options.
 
 ---
 
