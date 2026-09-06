@@ -80,6 +80,12 @@ class Subscription:
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
         self.stats = SubscriptionStats()
         self._closed = False
+        self._eof_queued = False
+
+    @property
+    def depth(self) -> int:
+        """Queued payloads, excluding the end-of-stream control marker."""
+        return max(0, self.queue.qsize() - int(self._eof_queued))
 
     @property
     def policy(self) -> Policy:
@@ -116,6 +122,7 @@ class Subscription:
             item = await self.queue.get()
             if item is _CLOSED:
                 self._closed = True
+                self._eof_queued = False
                 return
             self.stats.received += 1
             yield item
@@ -125,6 +132,7 @@ class Subscription:
         item = await self.queue.get()
         if item is _CLOSED:
             self._closed = True
+            self._eof_queued = False
             return None
         self.stats.received += 1
         return item
@@ -200,6 +208,13 @@ class CatchupSubscription:
         self.stats = SubscriptionStats()
         self._closed = False
         self._iterator: AsyncIterator[Any] | None = None
+        self._pending: deque[Any] = deque()
+
+    @property
+    def depth(self) -> int:
+        return len(self._pending) + min(
+            self._ring.total - self._position, len(self._ring._buf)
+        )
 
     @property
     def policy(self) -> str:
@@ -217,7 +232,9 @@ class CatchupSubscription:
             # Drain everything published so far BEFORE honouring close: close() fires
             # after the last publisher is done, so this final read cannot be raced.
             items, self._position = self._ring.read_from(self._position)
-            for item in items:
+            self._pending.extend(items)
+            while self._pending:
+                item = self._pending.popleft()
                 if self._skip(item):
                     continue
                 self.stats.received += 1
@@ -233,6 +250,11 @@ class CatchupSubscription:
         return item.id in self._bus._finalized.get(self.skip_finalized_topic, set())
 
     def _notify(self) -> None:
+        oldest = self._ring.total - len(self._ring._buf)
+        if self._position < oldest:
+            self.stats.dropped += oldest - self._position
+            self._position = oldest
+        self.stats.max_depth = max(self.stats.max_depth, self.depth)
         self._event.set()
 
     def close(self) -> None:
@@ -358,7 +380,8 @@ class Bus:
 
     # -- traffic --------------------------------------------------------------
 
-    async def publish(self, topic: str, payload: Any) -> None:
+    async def publish(self, topic: str, payload: Any) -> Any:
+        """Deliver and return the actual (possibly revision-stamped) payload."""
         # TextFrame bookkeeping happens even with no subscribers: the finalized-set
         # must be complete for late catch-up subscribers, and revision counters keep
         # advancing so a resumed subscriber's numbering stays consistent.
@@ -382,10 +405,13 @@ class Bus:
         ring = self._rings.get(topic)
         if ring is not None:
             ring.append(payload)
+            for sub in self._subs.get(topic, []):
+                if isinstance(sub, CatchupSubscription):
+                    sub._notify()
 
         subs = self._subs.get(topic)
         if not subs:
-            return
+            return payload
         for sub in subs:
             if isinstance(sub, CatchupSubscription):
                 continue  # delivery happens via the ring buffer
@@ -393,6 +419,7 @@ class Bus:
                 sub._offer(payload)
             else:
                 await sub._deliver(payload)
+        return payload
 
     async def close(self, topic: str) -> None:
         """Signal end-of-stream once every registered publisher has closed."""
@@ -405,14 +432,27 @@ class Bus:
                 sub.close()
             else:
                 await sub.queue.put(_CLOSED)
+                sub._eof_queued = True
 
-    async def close_all(self) -> None:
+    async def close_all(self, *, discard_pending: bool = False) -> None:
+        """Close all readers; abort shutdown may discard queues without blocking."""
         for topic in list(self._subs):
             for sub in self._subs[topic]:
                 if isinstance(sub, CatchupSubscription):
+                    if discard_pending:
+                        sub.stats.dropped += sub.depth
+                        sub._pending.clear()
+                        sub._position = sub._ring.total
                     sub.close()
                 else:
-                    await sub.queue.put(_CLOSED)
+                    if discard_pending:
+                        while not sub.queue.empty():
+                            if sub.queue.get_nowait() is not _CLOSED:
+                                sub.stats.dropped += 1
+                        sub._eof_queued = False
+                    if not sub._closed and not sub._eof_queued:
+                        await sub.queue.put(_CLOSED)
+                        sub._eof_queued = True
 
     # -- introspection --------------------------------------------------------
 
@@ -437,6 +477,7 @@ class Bus:
                         "received": s.stats.received,
                         "dropped": s.stats.dropped,
                         "max_depth": s.stats.max_depth,
+                        "depth": s.depth,
                     }
                     for s in self._subs.get(topic, [])
                 },
