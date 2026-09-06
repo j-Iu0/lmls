@@ -29,6 +29,7 @@ REGISTRY: dict[str, str] = {
     # inputs
     "mic": "livesub.input.mic:MicSource",
     "ffmpeg": "livesub.input.ffmpeg_source:FfmpegSource",
+    "media": "livesub.input.media:ControlledMediaSource",
     "wav": "livesub.input.wav_replay:WavReplaySource",
     "stdin": "livesub.input.stdin_source:StdinPcmSource",
     # denoisers
