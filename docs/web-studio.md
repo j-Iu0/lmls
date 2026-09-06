@@ -61,7 +61,9 @@ file for subtitles does not imply a browser can display its video codec.
 ## Subtitle monitor and video
 
 Use Topics in the bottom subtitle monitor to connect any text output to the panel.
-Each segment/topic updates in place when a newer revision arrives. The panel can
+Original text and its translations share one block per speech segment, with the
+original above its translations. Each topic updates independently in place when
+a newer revision arrives. The panel can
 be resized, minimized, or expanded to the viewport. Text is inserted as text, never
 interpreted as markup. The media source's overlay selector independently connects
 a text output to the video. Its fullscreen button includes the subtitle overlay.
