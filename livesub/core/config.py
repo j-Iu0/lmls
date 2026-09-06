@@ -296,7 +296,8 @@ def config_to_dict(cfg: GraphConfig) -> dict[str, Any]:
             cls = resolve(node.impl)
             # Synthetic fan-in keys are internal; the public form is a topic list.
             raw["in"] = (list(node.inputs.values()) if len(cls.inputs) == 1
-                         and len(node.inputs) > 1 else dict(node.inputs))
+                         and (len(node.inputs) > 1 or set(node.inputs) != set(cls.inputs))
+                         else dict(node.inputs))
         if node.outputs:
             raw["out"] = dict(node.outputs)
         data["node"].append(raw)

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
 import pytest
+import numpy as np
 
 from livesub.core.bus import Bus
 from livesub.core.config import GraphConfig, NodeConfig
@@ -15,7 +16,7 @@ from livesub.core.interfaces import Module
 from livesub.core.metrics import Metrics
 from livesub.core.registry import REGISTRY
 from livesub.core.startup import StartupPhase
-from livesub.core.types import Lineage, TextFrame
+from livesub.core.types import AudioFrame, Lineage, TextFrame, Utterance
 
 
 class Source(Module):
@@ -61,9 +62,42 @@ class Sink(Source):
         self.received.append(frame)
 
 
+class AudioSource(Source):
+    outputs = {"out": AudioFrame}
+
+
+class UtteranceSource(Source):
+    outputs = {"out": Utterance}
+
+
+class Segmenter(Source):
+    inputs = {"in": AudioFrame}
+    outputs = {"out": Utterance}
+
+    def process(self, frame):
+        partial = Utterance("u0001", frame.pcm, 1.0, 2.0, is_final=False)
+        return [partial, replace(partial, is_final=True)]
+
+    def drain(self):
+        return [Utterance("u0001", np.zeros(1, dtype=np.float32), 1.0, 2.0)]
+
+
+class UtterancePass(Source):
+    inputs = {"in": Utterance}
+    outputs = {"out": Utterance}
+
+    def process(self, frame):
+        return frame
+
+
+class UtteranceSink(Sink):
+    inputs = {"in": Utterance}
+
+
 @pytest.fixture
 def make_graph(monkeypatch):
-    for cls in (Source, Transform, Sink):
+    for cls in (Source, Transform, Sink, AudioSource, UtteranceSource, Segmenter,
+                UtterancePass, UtteranceSink):
         monkeypatch.setitem(REGISTRY, cls.__name__, f"{__name__}:{cls.__name__}")
 
     def make(*, fanin=False, transform=True, **kwargs):
@@ -479,3 +513,211 @@ async def test_bus_reports_live_queue_depth_and_catchup_overwrites():
     assert await drop.get() == 518
     assert bus.report()["raw"]["subscribers"]["drop"]["depth"] == 1
     await catchup._iterator.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_async", [True, False])
+@pytest.mark.parametrize("outcome", ["empty", "none", "fail", "cancel"])
+async def test_in_flight_processing_fanin_and_terminal_cleanup(make_graph, is_async, outcome):
+    graph = make_graph(fanin=True)
+    entered = asyncio.Queue()
+    async_release, sync_release = asyncio.Event(), threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def result():
+        if outcome == "fail":
+            raise RuntimeError("processing failed")
+        return [] if outcome == "empty" else None
+
+    async def async_process(frame):
+        entered.put_nowait(None)
+        await async_release.wait()
+        return result()
+
+    def sync_process(frame):
+        loop.call_soon_threadsafe(entered.put_nowait, None)
+        assert sync_release.wait(2)
+        return result()
+
+    graph.nodes[2].stage.process = async_process if is_async else sync_process
+    assert all(n["in_flight"] == 0 for n in graph.snapshot()["nodes"].values())
+    task = asyncio.create_task(graph.run())
+    try:
+        await asyncio.wait_for(entered.get(), 1)
+        await asyncio.wait_for(entered.get(), 1)
+        snapshot = graph.snapshot()
+        assert snapshot["nodes"]["transform"]["in_flight"] == 2
+        assert snapshot["nodes"]["sink"]["in_flight"] == 0
+        assert snapshot["nodes"]["source"]["in_flight"] == 0
+        assert snapshot["nodes"]["other"]["in_flight"] == 0
+        if outcome == "cancel":
+            task.cancel()
+    finally:
+        async_release.set()
+        sync_release.set()
+    if outcome in {"fail", "cancel"}:
+        with pytest.raises(RuntimeError if outcome == "fail" else asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+    else:
+        await asyncio.wait_for(task, 1)
+        assert graph.nodes[-1].stage.received == []
+    assert all(n["in_flight"] == 0 for n in graph.snapshot()["nodes"].values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [True, False])
+async def test_in_flight_publish_backpressure_and_cleanup(make_graph, cancel):
+    published = asyncio.Event()
+    callback_counts = []
+
+    def observe(event):
+        if event["kind"] in {"processing", "output"}:
+            callback_counts.append(graph.snapshot()["nodes"][event["node"]]["in_flight"])
+        if event.get("topic") == "processed":
+            published.set()
+
+    graph = make_graph(on_event=observe)
+    probe = graph.bus.subscribe("processed", "unread", maxsize=1)
+    task = asyncio.create_task(graph.run())
+    await asyncio.wait_for(published.wait(), 1)
+    assert graph.snapshot()["nodes"]["transform"]["in_flight"] == 1
+    assert probe.depth == 1  # the second output is blocked behind the first
+    if cancel:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+    else:
+        async def consume():
+            return [item async for item in probe]
+
+        reader = asyncio.create_task(consume())
+        await asyncio.wait_for(task, 1)
+        assert len(await reader) == 2
+    assert all(count > 0 for count in callback_counts)
+    assert all(n["in_flight"] == 0 for n in graph.snapshot()["nodes"].values())
+
+
+@pytest.mark.asyncio
+async def test_in_flight_publish_failure_resets_counter(make_graph, monkeypatch):
+    graph = make_graph()
+
+    async def fail(topic, payload):
+        assert graph.snapshot()["nodes"]["source"]["in_flight"] == 1
+        raise RuntimeError("delivery failed")
+
+    monkeypatch.setattr(graph.bus, "publish", fail)
+    with pytest.raises(RuntimeError, match="delivery failed"):
+        await graph.run()
+    assert all(n["in_flight"] == 0 for n in graph.snapshot()["nodes"].values())
+
+
+@pytest.mark.asyncio
+async def test_in_flight_excludes_source_wait_and_input_wait(make_graph):
+    graph = make_graph()
+    decoding = asyncio.Event()
+
+    async def stream():
+        decoding.set()
+        await asyncio.Event().wait()
+        yield TextFrame("unreachable")
+
+    graph.nodes[0].stage.run = stream
+    task = asyncio.create_task(graph.run())
+    await asyncio.wait_for(decoding.wait(), 1)
+    assert all(n["in_flight"] == 0 for n in graph.snapshot()["nodes"].values())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("namespace", [True, False])
+async def test_segment_namespaces_distinguish_branches_preserve_partials_drain_and_passthrough(
+    make_graph, namespace
+):
+    nodes = []
+    for side in ("a", "b"):
+        nodes.extend([
+            NodeConfig(f"source_{side}", "AudioSource", outputs={"out": f"audio_{side}"}),
+            NodeConfig(f"segment_{side}", "Segmenter", inputs={"in": f"audio_{side}"},
+                       outputs={"out": f"utterance_{side}"}),
+        ])
+    nodes.extend([
+        NodeConfig("pass", "UtterancePass", inputs={"in": "utterance_a", "other": "utterance_b"},
+                   outputs={"out": "passed"}),
+        NodeConfig("sink", "UtteranceSink", inputs={"in": "passed"}),
+    ])
+    graph = Graph(GraphConfig(nodes), namespace_segments=namespace)
+    for node in graph.nodes:
+        if not node.stage.inputs:
+            node.stage.frames = [AudioFrame(np.zeros(1, dtype=np.float32))]
+    await graph.run()
+    frames = graph.nodes[-1].stage.received
+    assert len(frames) == 6
+    if namespace:
+        assert {tuple(json.loads(f.id)) for f in frames} == {
+            ("segment_a", "u0001"), ("segment_b", "u0001")}
+        for side in ("a", "b"):
+            branch = [f for f in frames if json.loads(f.id)[0] == f"segment_{side}"]
+            assert [f.is_final for f in branch] == [False, True, True]
+            assert len({f.id for f in branch}) == 1
+    else:
+        assert {f.id for f in frames} == {"u0001"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("namespace", [True, False])
+@pytest.mark.parametrize("payload_type", ["utterance", "text"])
+async def test_direct_source_namespaces_are_stable_and_preserve_other_fields(
+    make_graph, namespace, payload_type
+):
+    source_impl = "UtteranceSource" if payload_type == "utterance" else "Source"
+    sink_impl = "UtteranceSink" if payload_type == "utterance" else "Sink"
+    graph = Graph(GraphConfig([
+        NodeConfig("source_a", source_impl, outputs={"out": "raw"}),
+        NodeConfig("source_b", source_impl, outputs={"out": "raw"}),
+        NodeConfig("sink", sink_impl, inputs={"in": "raw"}),
+    ]), namespace_segments=namespace)
+    if payload_type == "utterance":
+        partial = Utterance("u0001", np.zeros(1, dtype=np.float32), 1.0, 2.0, False)
+    else:
+        partial = TextFrame("hello", lang="vi", is_final=False,
+                            lineage=Lineage("u0001", t_audio_end=2.0,
+                                            stage_latency_ms={"upstream": 4.0}),
+                            meta={"detail": "preserved"})
+    for node in graph.nodes[:2]:
+        node.stage.frames = [partial, replace(partial, is_final=True)]
+    await graph.run()
+    frames = graph.nodes[-1].stage.received
+    ids = [f.id if payload_type == "utterance" else f.segment_id for f in frames]
+    assert len(frames) == 4
+    assert ids[0] == ids[1] and ids[2] == ids[3]
+    assert (ids[0] != ids[2]) is namespace
+    if namespace:
+        assert [json.loads(i) for i in ids] == [
+            ["source_a", "u0001"], ["source_a", "u0001"],
+            ["source_b", "u0001"], ["source_b", "u0001"]]
+    else:
+        assert set(ids) == {"u0001"}
+    for frame in frames:
+        if payload_type == "utterance":
+            assert frame.pcm is partial.pcm
+            assert (frame.t_start, frame.t_end) == (1.0, 2.0)
+        else:
+            assert frame.lineage.t_audio_end == 2.0
+            assert frame.lineage.stage_latency_ms == {"upstream": 4.0}
+            assert frame.meta == partial.meta and frame.lang == "vi" and frame.text == "hello"
+    assert (partial.id if payload_type == "utterance" else partial.segment_id) == "u0001"
+
+
+@pytest.mark.asyncio
+async def test_changed_utterance_id_is_a_new_origin(make_graph):
+    graph = Graph(GraphConfig([
+        NodeConfig("source", "UtteranceSource", outputs={"out": "raw"}),
+        NodeConfig("split", "UtterancePass", inputs={"in": "raw"}, outputs={"out": "split"}),
+        NodeConfig("sink", "UtteranceSink", inputs={"in": "split"}),
+    ]), namespace_segments=True)
+    graph.nodes[0].stage.frames = [Utterance("u0001", np.zeros(1), 1.0, 2.0)]
+    graph.nodes[1].stage.process = lambda frame: replace(frame, id="child")
+    await graph.run()
+    assert json.loads(graph.nodes[-1].stage.received[0].id) == ["split", "child"]
