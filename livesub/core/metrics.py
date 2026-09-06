@@ -12,15 +12,15 @@ line from the slower translated one.
 
 from __future__ import annotations
 
-import statistics
-from collections import defaultdict
+from collections import defaultdict, deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from .types import TextFrame
 
 
-def percentile(values: list[float], pct: float) -> float:
+def percentile(values: Sequence[float], pct: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -31,44 +31,62 @@ def percentile(values: list[float], pct: float) -> float:
 
 @dataclass
 class Metrics:
-    """Collects timings for one run."""
+    """Lifetime aggregates with a bounded recent window for percentiles.
 
-    stage_ms: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
-    end_to_end_ms: dict[str, list[float]] = field(
-        default_factory=lambda: defaultdict(list)
-    )
+    Only record_stage counts processing; frame lineage is provenance, not new work.
+    """
+
+    stage_ms: dict[str, deque[float]] = field(default_factory=dict)
+    end_to_end_ms: dict[str, deque[float]] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    max_samples: int = 2048
+    stage_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    stage_totals: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    _end_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    _end_max: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+
+    def __post_init__(self) -> None:
+        if self.max_samples < 1:
+            raise ValueError("max_samples must be positive")
 
     def record_stage(self, stage: str, ms: float) -> None:
+        if stage not in self.stage_ms:
+            self.stage_ms[stage] = deque(maxlen=self.max_samples)
         self.stage_ms[stage].append(ms)
+        self.stage_counts[stage] += 1
+        self.stage_totals[stage] += ms
 
     def record_event(self, event: TextFrame) -> None:
         """Record an emitted subtitle frame, bucketed by language."""
         key = event.lang
         self.counts[key] += 1
         if event.lineage.t_audio_end and event.is_final:
-            self.end_to_end_ms[key].append(event.end_to_end_ms)
-        for stage, ms in event.lineage.stage_latency_ms.items():
-            self.stage_ms[stage].append(ms)
+            ms = event.end_to_end_ms
+            if key not in self.end_to_end_ms:
+                self.end_to_end_ms[key] = deque(maxlen=self.max_samples)
+            self.end_to_end_ms[key].append(ms)
+            self._end_counts[key] += 1
+            self._end_max[key] = max(self._end_max[key], ms)
 
     def summary(self) -> dict[str, Any]:
         return {
             "counts": dict(self.counts),
             "stages": {
                 name: {
-                    "n": len(v),
+                    "n": self.stage_counts[name],
                     "p50": percentile(v, 0.50),
                     "p95": percentile(v, 0.95),
-                    "mean": round(statistics.fmean(v), 1) if v else 0.0,
+                    "mean": round(self.stage_totals[name] / self.stage_counts[name], 1)
+                    if self.stage_counts[name] else 0.0,
                 }
                 for name, v in sorted(self.stage_ms.items())
             },
             "end_to_end": {
                 lang: {
-                    "n": len(v),
+                    "n": self._end_counts[lang],
                     "p50": percentile(v, 0.50),
                     "p95": percentile(v, 0.95),
-                    "max": round(max(v), 1) if v else 0.0,
+                    "max": round(self._end_max[lang], 1),
                 }
                 for lang, v in sorted(self.end_to_end_ms.items())
             },

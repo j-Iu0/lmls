@@ -18,10 +18,11 @@ import asyncio
 import contextlib
 import dataclasses
 import inspect
+import json
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Sequence
 
 from .bus import Bus, SubscriptionMode
 from .config import GraphConfig, NodeConfig
@@ -196,10 +197,12 @@ class Graph:
     """A built, runnable graph."""
 
     def __init__(self, cfg: GraphConfig, bus: Bus | None = None,
-                 on_startup: StartupCallback | None = None):
+                 on_startup: StartupCallback | None = None,
+                 on_event: Callable[[dict[str, Any]], None] | None = None):
         self.config = cfg
         self.bus = bus or Bus()
         self._on_startup = on_startup
+        self._on_event = on_event
         self.warnings = validate(cfg)
         for w in self.warnings:
             log.warning("%s", w)
@@ -222,6 +225,57 @@ class Graph:
         # run() and external drivers (the demo pre-starts stages to warm models) may
         # both call start(); a stage holding a resource must be started exactly once.
         self._started: set[int] = set()
+        self._start_order: list[BuiltNode] = []
+        self._start_lock = asyncio.Lock()
+        self._close_task: asyncio.Task | None = None
+        self._starting: asyncio.Task | None = None
+        self._aborted = False
+        self._states = {n.config.name: {"state": "pending", "message": ""}
+                        for n in self.nodes}
+
+    def _emit(self, event: dict[str, Any]) -> None:
+        """Synchronous, loop-thread notification; no event history is retained."""
+        if self._on_event is not None:
+            try:
+                self._on_event(event)
+            except (Exception, asyncio.CancelledError):
+                log.exception("graph observer failed")
+
+    def _state(self, node: BuiltNode, state: str, message: str = "") -> None:
+        # Retain one bounded message per configured node, never exception tracebacks.
+        status = {"state": state, "message": message[:2048]}
+        self._states[node.config.name] = status
+        self._emit({"kind": "node_state", "node": node.config.name, **status})
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return detached JSON data. Call on the graph's event loop while running.
+
+        Source describe() implementations must be cheap synchronous diagnostics.
+        Exceptions and non-JSON results are omitted; payloads are never retained.
+        """
+        nodes = {}
+        for node in self.nodes:
+            name = node.config.name
+            count = self.metrics.stage_counts.get(name, 0)
+            total = self.metrics.stage_totals.get(name, 0.0)
+            samples = self.metrics.stage_ms.get(name)
+            info = {**self._states[name], "processing": {
+                "count": count, "total_ms": total,
+                "mean_ms": total / count if count else 0.0,
+                "last_ms": samples[-1] if samples else 0.0,
+            }}
+            if not node.stage.inputs:
+                try:
+                    diagnostics = node.stage.describe()
+                    if isinstance(diagnostics, dict):
+                        info["diagnostics"] = json.loads(
+                            json.dumps(diagnostics, allow_nan=False)
+                        )
+                except (Exception, asyncio.CancelledError):
+                    pass
+            nodes[name] = info
+        return {"nodes": nodes, "metrics": self.metrics.summary(),
+                "bus": self.bus.report(), "started_at": self.started_at}
 
     def _build_node(self, nc: NodeConfig) -> BuiltNode:
         stage = build(nc.impl, name=nc.name, **nc.options)
@@ -261,47 +315,106 @@ class Graph:
         started a second time -- the websocket sink binds its port in start(), and a
         second bind is EADDRINUSE even with no other process present.
         """
-        for node in self.nodes:
-            if id(node) not in self._started:
-                self._started.add(id(node))
-                await node.stage.start()
+        async with self._start_lock:
+            if self._close_task is not None:
+                raise RuntimeError("graph is closed; build a new graph for another run")
+            try:
+                # Resource-producing sources must not start until every consumer is ready.
+                for node in sorted(self.nodes, key=lambda n: not bool(n.stage.inputs)):
+                    if id(node) in self._started:
+                        continue
+                    self._started.add(id(node))
+                    self._start_order.append(node)  # includes partially started stages
+                    self._state(node, "starting")
+                    try:
+                        self._starting = asyncio.create_task(node.stage.start())
+                        await self._starting
+                        if self._close_task is not None:
+                            raise asyncio.CancelledError
+                    except asyncio.CancelledError:
+                        self._state(node, "completed", "startup cancelled")
+                        raise
+                    except Exception as exc:
+                        self._state(node, "failed", str(exc))
+                        raise
+                    finally:
+                        self._starting = None
+                    self._state(node, "ready")
+            except BaseException:
+                self._aborted = True
+                await self.aclose()
+                raise
 
     async def run(self, timeout: float | None = None) -> None:
         self.started_at = time.time()
-        await self.start()
-        self._tasks = [
-            asyncio.create_task(self._runner(node), name=node.config.name)
-            for node in self.nodes
-        ]
         try:
-            if timeout:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._tasks, return_exceptions=False), timeout
-                )
-            else:
-                await asyncio.gather(*self._tasks)
-        except asyncio.TimeoutError:
-            log.info("graph stopped after %.1fs timeout", timeout)
+            await self.start()
+            self._tasks = [
+                asyncio.create_task(self._runner(node), name=node.config.name)
+                for node in self.nodes
+            ]
+            try:
+                async with asyncio.timeout(timeout) as deadline:
+                    await asyncio.gather(*self._tasks)
+            except asyncio.TimeoutError:
+                if not deadline.expired():
+                    raise  # a stage's own TimeoutError is a failure, not our deadline
+                self._aborted = True
+                log.info("graph stopped after %.1fs timeout", timeout)
+        except BaseException:
+            self._aborted = True
+            raise
         finally:
             await self.aclose()
 
     async def aclose(self) -> None:
+        """Idempotent cleanup, protected even against repeated caller cancellation."""
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._cleanup(), name="graph:cleanup")
+        cancelled = False
+        while not self._close_task.done():
+            try:
+                await asyncio.shield(self._close_task)
+            except asyncio.CancelledError:
+                cancelled = True
+        self._close_task.result()
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _cleanup(self) -> None:
+        if self._starting is not None and not self._starting.done():
+            self._aborted = True
+            if not self._starting.cancelling():
+                self._starting.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._starting
         for task in self._tasks:
             if not task.done():
-                task.cancel()
+                self._aborted = True
+                if not task.cancelling():
+                    task.cancel()
         for task in self._tasks:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
-        for node in self.nodes:
-            if id(node) not in self._started:
-                continue  # never started; stopping it would close nothing it opened
-            with contextlib.suppress(Exception):
-                await node.stage.stop()  # flush() responsibility moved here
+        if self._aborted:
+            # No consumers remain to make room for a blocking end-of-stream marker.
+            await self.bus.close_all(discard_pending=True)
+        for node in reversed(self._start_order):
+            try:
+                await node.stage.stop()
+            except (Exception, asyncio.CancelledError) as exc:
+                self._state(node, "failed", f"stop failed: {exc}")
+                log.exception("node %r stop failed", node.config.name)
+            if self._states[node.config.name]["state"] not in {"completed", "failed"}:
+                self._state(node, "completed", "stopped")
         self._started.clear()
+        self._start_order.clear()
+        self._tasks.clear()
 
     # -- unified runners ------------------------------------------------------
 
     async def _runner(self, node: BuiltNode) -> None:
+        self._state(node, "running")
         try:
             cls = type(node.stage)
             if not cls.inputs:
@@ -313,21 +426,25 @@ class Graph:
             else:
                 # Transform: has both inputs and outputs
                 await self._run_transform(node)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("node %r failed", node.config.name)
-            raise
-        finally:
             for topic in node.config.out_topics:
                 await self.bus.close(topic)
+        except asyncio.CancelledError:
+            self._state(node, "completed", "cancelled")
+            raise
+        except Exception as exc:
+            self._state(node, "failed", str(exc))
+            log.exception("node %r failed", node.config.name)
+            raise
+        else:
+            self._state(node, "completed")
 
     async def _run_source(self, node: BuiltNode) -> None:
         stage = node.stage
         # Sources have exactly one output port
         topic = node.config.out_topics[0]
-        async for payload in stage.run():
-            await self.bus.publish(topic, payload)
+        async with contextlib.aclosing(stage.run()) as stream:
+            async for payload in stream:
+                await self._publish(node, topic, payload)
 
     async def _run_transform(self, node: BuiltNode) -> None:
         stage = node.stage
@@ -335,26 +452,76 @@ class Graph:
 
         # If multiple subscriptions (fan-in), run one pump per subscription concurrently
         pumps = [
-            asyncio.create_task(self._pump(node, sub, stage, is_async))
+            asyncio.create_task(self._pump(node, sub, is_async))
             for sub in node.subscriptions
         ]
-        await asyncio.gather(*pumps)
+        await self._join_pumps(pumps)
 
         # Input stream exhausted: publish whatever the module still buffers.
         for leftover in stage.drain():
             await self._publish_result(node, leftover, None, 0.0)
 
-    async def _pump(self, node: BuiltNode, sub, stage: Module, is_async: bool) -> None:
-        loop = asyncio.get_running_loop()
+    async def _pump(self, node: BuiltNode, sub, is_async: bool) -> None:
         async for payload in sub:
-            t0 = time.perf_counter()
-            if is_async:
-                result = await stage.process(payload)
-            else:
-                result = await loop.run_in_executor(None, stage.process, payload)
-            elapsed = time.perf_counter() - t0
-            self.metrics.record_stage(node.config.name, elapsed * 1000)
+            result, elapsed = await self._process(node, payload, is_async)
             await self._publish_result(node, result, payload, elapsed)
+
+    async def _join_pumps(self, pumps: list[asyncio.Task]) -> None:
+        try:
+            await asyncio.gather(*pumps)
+        finally:
+            # gather does not cancel siblings when one raises.
+            for pump in pumps:
+                if not pump.done() and not pump.cancelling():
+                    pump.cancel()
+            await asyncio.gather(*pumps, return_exceptions=True)
+
+    async def _process(
+        self, node: BuiltNode, payload: Any, is_async: bool
+    ) -> tuple[Any, float]:
+        elapsed = 0.0
+        invoked = False
+
+        def process_sync():
+            nonlocal elapsed, invoked
+            invoked = True
+            t0 = time.perf_counter()
+            try:
+                return node.stage.process(payload)
+            finally:
+                elapsed = time.perf_counter() - t0
+
+        try:
+            if is_async:
+                invoked = True
+                t0 = time.perf_counter()
+                try:
+                    result = await node.stage.process(payload)
+                finally:
+                    elapsed = time.perf_counter() - t0
+            else:
+                future = asyncio.get_running_loop().run_in_executor(None, process_sync)
+                try:
+                    result = await asyncio.shield(future)
+                except asyncio.CancelledError:
+                    # Python cannot interrupt a running worker: join it before stop()
+                    # releases resources that process() may still be using.
+                    with contextlib.suppress(Exception, asyncio.CancelledError):
+                        await future
+                    raise
+            return result, elapsed
+        finally:
+            if invoked:
+                self.metrics.record_stage(node.config.name, elapsed * 1000)
+                self._emit({"kind": "processing", "node": node.config.name,
+                            "elapsed_ms": elapsed * 1000})
+
+    async def _publish(self, node: BuiltNode, topic: str, payload: Any) -> None:
+        payload = await self.bus.publish(topic, payload)
+        if isinstance(payload, TextFrame):
+            self.metrics.record_event(payload)
+        self._emit({"kind": "output", "node": node.config.name,
+                    "topic": topic, "payload": payload})
 
     async def _publish_result(
         self, node: BuiltNode, result: Any, source_payload: Any, elapsed_s: float
@@ -402,25 +569,21 @@ class Graph:
                 )
                 continue
 
-            if isinstance(payload, TextFrame):
-                self.metrics.record_event(payload)
-            await self.bus.publish(topic, payload)
+            await self._publish(node, topic, payload)
 
     async def _run_sink(self, node: BuiltNode) -> None:
         stage = node.stage
         is_async = inspect.iscoroutinefunction(stage.process)
-        loop = asyncio.get_running_loop()
         lock = asyncio.Lock()  # serialise writes; sinks render shared state
 
         async def pump(sub) -> None:
             async for payload in sub:
                 async with lock:
-                    if is_async:
-                        await stage.process(payload)
-                    else:
-                        await loop.run_in_executor(None, stage.process, payload)
+                    await self._process(node, payload, is_async)
 
-        await asyncio.gather(*(pump(sub) for sub in node.subscriptions))
+        await self._join_pumps([
+            asyncio.create_task(pump(sub)) for sub in node.subscriptions
+        ])
 
 
 async def run_config(cfg: GraphConfig, timeout: float | None = None) -> Graph:
