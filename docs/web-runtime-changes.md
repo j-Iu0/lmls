@@ -52,6 +52,7 @@ It returns detached JSON-compatible data with these top-level keys:
     "example": {
       "state": "pending",
       "message": "",
+      "in_flight": 0,
       "processing": {
         "count": 0,
         "total_ms": 0.0,
@@ -70,6 +71,21 @@ outside a loop. Cancellation uses terminal `completed` with a cancellation
 message. Failures retain `failed` and an error message. Closing a prepared graph
 without running it completes the stages that were started. Never-started nodes
 remain `pending`.
+
+`nodes[name].in_flight` counts active processing and publication operations, including
+executor dispatch and publication blocked by backpressure. It excludes waiting
+for input, source decoding, startup, and EOF delivery. Fan-in can make it greater
+than one. Counters are updated on the loop and reset in `finally` on success,
+failure, or cancellation; a cancelled synchronous operation remains counted while
+its worker finishes. Inline processing/output observers still see the operation
+as active. There is no event-loop scheduling gap between processing completion
+and its publications at the existing call sites.
+
+Once upstream production is paused, a session can detect descendant quiescence
+by checking that their `in_flight` counts and relevant bus queue depths are all
+zero. This also handles a transcriber returning `[]` or translator returning
+`None`, which emit no output notification. This is an observation of current
+work, not a guarantee that an unpaused source will produce no more work.
 
 For sources, `nodes[name].diagnostics` contains a detached copy of `describe()`
 when it returns a JSON-compatible dictionary. Raising, cyclic, non-finite, or
@@ -112,6 +128,40 @@ blocking queue. A stage's own `TimeoutError` propagates as a failure; only the
 graph's configured run deadline is handled as a normal timed stop. The run
 deadline continues to start after startup.
 
+## Optional segment namespaces
+
+Separate sources or segmenters commonly start their local IDs at `u0001`. Without
+namespaces, joining those branches can conflate unrelated segments in revision
+counters, finalization tracking, and subtitle display state. Web sessions can opt
+in with `Graph(config, namespace_segments=True)`. The default is `False`, preserving
+existing CLI IDs and behavior. Enabling it is the session caller's responsibility;
+the core does not import or detect web code.
+
+An originating ID becomes the compact JSON encoding of `[node.config.name, local_id]`,
+for example `["segment_a","u0001"]`. JSON encoding avoids delimiter ambiguity and
+handles arbitrary node names and IDs. It is deterministic, so repeated partial,
+final, and drain emissions from the same origin keep the same ID without an
+ever-growing mapping table. Dataclass copies preserve the original payloads and
+all other fields; normal bus revision stamping still occurs afterward.
+
+The generic payload-boundary rules are:
+
+- Direct `Utterance` sources namespace `Utterance.id`.
+- Direct `TextFrame` sources namespace `Lineage.segment_id`, preserving the other
+  lineage and frame fields.
+- Transform `Utterance` output is a new origin when the input is not an
+  `Utterance`, or when its output ID differs from its input ID. This covers
+  audio segmentation and a transform explicitly creating a new segment.
+- An `Utterance` transform preserving its input ID preserves the namespace too;
+  pass-through does not add another prefix. Downstream text retains its inherited
+  lineage ID.
+- Drain output has no input payload, so an `Utterance` drained by a segmentation
+  node is namespaced with that node and its local ID. Draining modules must emit
+  their local IDs; the graph does not guess provenance from an ID's string syntax.
+
+The rules depend on payload types and the actual input/output IDs, not module
+implementation names, topic naming, or web-specific classes.
+
 ## Metrics and memory rationale
 
 `record_event()` formerly copied every inherited lineage timing into stage
@@ -145,5 +195,25 @@ cleanup, full-queue abort, synchronous worker ownership and queue-excluded timin
 drain/`None` counts, deadline versus service timeouts, stop failures, detached safe
 snapshots, ring drops/depth, and bounded samples with lifetime aggregates.
 
+Quiescence tests cover concurrent synchronous/async processing, `[]`/`None`
+results, errors/cancellation, publication backpressure, and idle source/input
+waits. Namespace tests cover two segmenter branches with colliding local IDs,
+stable partial/final/drain IDs, unchanged pass-through IDs, changed-ID origins,
+direct utterance/text sources, payload field preservation, and opt-out behavior.
+
 Existing startup, bus, graph wiring, and module tests provide regression coverage
 for warm-up, delivery, fan-out, revision stamping, and module integration.
+
+## Default output ports
+
+`Module.default_output` optionally names the destination of a bare result from a
+multi-output module. The mock, MLX, and cloud translators declare `text_out`:
+faithful translation already returns a bare `TextFrame` in these adapters, while
+repair mode returns named outputs. The editor exposes both ports, revealing that
+the old runner selected the alphabetically first **topic** for a bare result.
+Connecting or renaming an optional correction topic could therefore redirect a
+translation to that socket. The declaration fixes routing without changing the
+standalone adapters' return types. An unconnected default output drops that
+result, just like an unconnected named dictionary output. Other multi-output
+modules must return named outputs when multiple topics are wired, or explicitly
+declare a default. Single-output modules keep their existing behavior.

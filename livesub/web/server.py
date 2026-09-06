@@ -230,6 +230,15 @@ def create_app(config_path: Path | None = None, media_root: Path | None = None) 
             library.temp.cleanup()
 
     loop = None
+    async def shutdown(app):
+        # Close upgraded connections before aiohttp waits for HTTP handlers to
+        # finish; waiting until cleanup_ctx would leave live WebSockets open for
+        # the full shutdown timeout.
+        await session.stop()
+        await asyncio.gather(*(client.close(code=1001, message=b'Server shutting down')
+                               for client in list(app[CLIENTS])))
+
+    app.on_shutdown.append(shutdown)
     app.cleanup_ctx.append(lifecycle)
     app.add_routes([
         web.get('/', index), web.get('/api/bootstrap', bootstrap),
