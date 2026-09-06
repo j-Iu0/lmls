@@ -141,6 +141,40 @@ export function validateLocal(config, catalog) {
   }
   return [...new Set(issues)];
 }
+// Group a speech segment's original text, corrections, and translations together.
+// Follow graph dependencies so late original text still appears above translations.
+export function groupCaptions(rows, config) {
+  const producers = new Map(), depths = new Map();
+  for (const node of config.nodes) for (const topic of Object.values(node.outputs)) {
+    if (!producers.has(topic)) producers.set(topic, []);
+    producers.get(topic).push(node);
+  }
+  function depth(node, visiting = new Set()) {
+    if (depths.has(node.name)) return depths.get(node.name);
+    if (visiting.has(node.name)) return 0;
+    const path = new Set(visiting).add(node.name);
+    const parents = Object.values(node.inputs).flatMap(topic => producers.get(topic) || []);
+    const value = parents.length ? 1 + Math.max(...parents.map(parent => depth(parent, path))) : 0;
+    depths.set(node.name, value); return value;
+  }
+  const order = new Map();
+  for (const node of config.nodes) Object.values(node.outputs).forEach((topic, index) => {
+    order.set(JSON.stringify([node.name, topic]), [depth(node), index]);
+  });
+  const groups = new Map();
+  for (const row of rows) {
+    const key = JSON.stringify([row.source || '', row.segment_id]);
+    if (!groups.has(key)) groups.set(key, {key, segment_id: row.segment_id, source: row.source, rows: []});
+    groups.get(key).rows.push(row);
+  }
+  for (const group of groups.values()) group.rows.sort((a, b) => {
+    const left = order.get(JSON.stringify([a.node, a.topic])) || [Infinity, 0];
+    const right = order.get(JSON.stringify([b.node, b.topic])) || [Infinity, 0];
+    return left[0] - right[0] || left[1] - right[1];
+  });
+  return [...groups.values()];
+}
+
 export class CaptionStore {
   constructor() { this.epoch = null; this.rows = new Map(); }
   clear(epoch = this.epoch) { this.epoch = epoch; this.rows.clear(); }
