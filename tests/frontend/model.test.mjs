@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeConfig, connect, connections, disconnect, removeNode, renameNode, addNode, autoLayout, textTopics, CaptionStore, overlayCaption, mediaSource, nodeQueues, validateLocal, isActive} from '../../livesub/web/static/model.mjs';
+import {normalizeConfig, connect, connections, disconnect, removeNode, renameNode, addNode, autoLayout, textTopics, CaptionStore, groupCaptions, overlayCaption, mediaSource, nodeQueues, validateLocal, isActive} from '../../livesub/web/static/model.mjs';
 
 const catalog = [
   {impl: 'wav', inputs: {}, outputs: {audio: 'AudioFrame'}, options: [{name: 'path', required: true, default: null}, {name: 'optional', default: null}, {name: 'realtime', default: true}]},
@@ -70,6 +70,33 @@ test('caption revisions replace rows; stale revisions do not regress; new epochs
   const store = new CaptionStore(), base = {topic: 'text', node: 'asr', source: 'a', segment_id: 'a:1'};
   store.ingest(1, [{...base, revision: 1, text: 'partial'}]); store.ingest(1, [{...base, revision: 2, text: 'final', is_final: true}]); store.ingest(1, [{...base, revision: 1, text: 'stale'}]);
   assert.equal(store.values().length, 1); assert.equal(store.values()[0].text, 'final'); store.ingest(2, []); assert.equal(store.values().length, 0);
+});
+test('translations share their original segment block even when received first, with originals ordered above them', () => {
+  const c = config([
+    node('translate', 'translator', {text: 'corrected'}, {text: 'translated'}),
+    node('correct', 'corrector', {text: 'original'}, {text: 'corrected'}),
+    node('asr', 'asr', {}, {text: 'original'}),
+  ]);
+  const base = {source: 'file', segment_id: '1', revision: 1};
+  const translated = {...base, node: 'translate', topic: 'translated', text: 'Bonjour'};
+  const original = {...base, node: 'asr', topic: 'original', text: 'Hello'};
+  const corrected = {...base, node: 'correct', topic: 'corrected', text: 'Hello!'};
+  const groups = groupCaptions([translated, corrected, original, {...original, segment_id: '2'}, {...original, source: 'mic'}], c);
+  assert.equal(groups.length, 3);
+  assert.deepEqual(groups[0].rows.map(row => row.text), ['Hello', 'Hello!', 'Bonjour']);
+  assert.equal(groups[1].segment_id, '2'); assert.equal(groups[2].source, 'mic');
+});
+test('late translations and independent revisions retain one stable subtitle block', () => {
+  const c = config([node('asr', 'asr', {}, {text: 'original'}), node('translate', 'translator', {text: 'original'}, {text: 'translated'})]);
+  const store = new CaptionStore(), original = {source: 'file', segment_id: '1', node: 'asr', topic: 'original', revision: 1, text: 'Hello'};
+  store.ingest(1, [original]);
+  const key = groupCaptions(store.values(), c)[0].key;
+  store.ingest(1, [{...original, node: 'translate', topic: 'translated', text: 'Bonjour'}]);
+  store.ingest(1, [{...original, revision: 2, text: 'Hello!', is_final: true}]);
+  const groups = groupCaptions(store.values(), c);
+  assert.equal(groups.length, 1); assert.equal(groups[0].key, key);
+  assert.deepEqual(groups[0].rows.map(row => [row.text, row.revision]), [['Hello!', 2], ['Bonjour', 1]]);
+  store.ingest(2, []); assert.deepEqual(groupCaptions(store.values(), c), []);
 });
 test('late timed overlays linger after media_end, yield to the next interval, and eventually expire', () => {
   const first = {topic: 'text', source: 'a', text: 'late final', media_start: 1, media_end: 2};

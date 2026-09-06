@@ -1,5 +1,5 @@
 import {el, $, ms, number, download, jsonObject} from './dom.js';
-import {normalizeConfig, clone, isActive, metadata, connect, disconnect, removeNode, renameNode, addNode, autoLayout, textTopics, validateLocal, CaptionStore, nodeQueues} from './model.mjs';
+import {normalizeConfig, clone, isActive, metadata, connect, disconnect, removeNode, renameNode, addNode, autoLayout, textTopics, validateLocal, CaptionStore, groupCaptions, nodeQueues} from './model.mjs';
 import {Graph} from './graph.js';
 import {MediaManager} from './media.js';
 
@@ -195,8 +195,9 @@ function clearCaptions() { captions.clear(snapshot.epoch); renderSubtitles(); me
 function renderSubtitles() {
   if (!config) return;
   const feed = $('#subtitle-feed'), rows = captions.values().filter(r => config.editor.subtitle_topics.includes(r.topic));
+  const groups = groupCaptions(rows, config);
   const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 55;
-  $('#caption-count').textContent = rows.length;
+  $('#caption-count').textContent = groups.length;
   if (!rows.length) {
     const label = config.editor.subtitle_topics.length ? 'Waiting for subtitle events' : 'No text topics connected';
     const hint = config.editor.subtitle_topics.length ? 'Live revisions and final captions will appear here.' : 'Open Topics to connect text outputs to this monitor.';
@@ -205,17 +206,21 @@ function renderSubtitles() {
   }
   feed.querySelector('.empty-caption')?.remove();
   const existing = new Map([...feed.children].map(n => [n.dataset.key, n])), keep = new Set();
-  for (const row of rows) {
-    const key = JSON.stringify([row.topic, row.node, row.source, row.segment_id]); keep.add(key);
+  for (const group of groups) {
+    const key = group.key; keep.add(key);
     let element = existing.get(key);
-    if (!element) { element = el('article', {class: 'caption-row', dataset: {key}}, el('div', {class: 'caption-meta'}), el('p', {class: 'caption-text'}), el('div', {class: 'caption-timing'})); feed.append(element); }
-    const signature = JSON.stringify(row); if (element.signature === signature) continue; element.signature = signature;
-    element.classList.toggle('interim', !row.is_final);
-    element.querySelector('.caption-meta').replaceChildren(el('span', {class: 'topic-chip'}, row.topic), el('span', {}, row.lang || '—'), el('span', {class: row.is_final ? 'final-tag' : 'interim-tag'}, row.is_final ? 'FINAL' : 'LIVE'), el('span', {class: 'muted'}, `#${row.segment_id ?? '—'} · r${row.revision ?? 0}`));
-    element.querySelector('.caption-text').textContent = row.text || '';
-    const stage = row.stage_latency_ms;
-    element.querySelector('.caption-timing').textContent = `${row.node || '—'} · end-to-end ${ms(row.end_to_end_ms)}${Number.isFinite(stage) ? ` · stage ${ms(stage)}` : ''}${Number.isFinite(row.media_start) ? ` · ${row.media_start.toFixed(2)}–${Number.isFinite(row.media_end) ? row.media_end.toFixed(2) : '…'}s` : ''}`;
-    element.title = stage && typeof stage === 'object' ? `Stage latency: ${JSON.stringify(stage)}` : '';
+    if (!element) { element = el('article', {class: 'caption-row caption-group', dataset: {key}, 'aria-label': `Subtitle ${group.segment_id}`}); feed.append(element); }
+    const signature = JSON.stringify(group); if (element.signature === signature) continue; element.signature = signature;
+    element.replaceChildren(el('div', {class: 'caption-segment caption-meta'}, `#${group.segment_id ?? '—'}${group.source ? ` · ${group.source}` : ''}`));
+    for (const row of group.rows) {
+      const stage = row.stage_latency_ms;
+      const entry = el('section', {class: `caption-entry${row.is_final ? '' : ' interim'}`, 'aria-label': `${row.lang || 'Text'} · ${row.topic}`},
+        el('div', {class: 'caption-meta'}, el('span', {class: 'topic-chip'}, row.topic), el('span', {}, row.lang || '—'), el('span', {class: row.is_final ? 'final-tag' : 'interim-tag'}, row.is_final ? 'FINAL' : 'LIVE'), el('span', {class: 'muted'}, `r${row.revision ?? 0}`)),
+        el('p', {class: 'caption-text'}, row.text || ''),
+        el('div', {class: 'caption-timing'}, `${row.node || '—'} · end-to-end ${ms(row.end_to_end_ms)}${Number.isFinite(stage) ? ` · stage ${ms(stage)}` : ''}${Number.isFinite(row.media_start) ? ` · ${row.media_start.toFixed(2)}–${Number.isFinite(row.media_end) ? row.media_end.toFixed(2) : '…'}s` : ''}`));
+      entry.title = stage && typeof stage === 'object' ? `Stage latency: ${JSON.stringify(stage)}` : '';
+      element.append(entry);
+    }
   }
   for (const [key, node] of existing) if (!keep.has(key)) node.remove();
   if (atBottom) feed.scrollTop = feed.scrollHeight;
