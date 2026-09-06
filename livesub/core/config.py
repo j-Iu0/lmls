@@ -53,7 +53,7 @@ from .registry import resolve
 
 _STRUCTURAL = {"name", "impl", "in", "out", "enabled", "mode", "skip_if_finalized"}
 
-_SUBSCRIPTION_MODES = ("default", "live", "blocking", "catchup")
+_SUBSCRIPTION_MODES = ("default", "drop", "blocking", "catchup")
 
 
 class ConfigError(ValueError):
@@ -72,7 +72,7 @@ class NodeConfig:
     outputs: dict[str, str] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
     #: Bus subscription mode for all input subscriptions on this node.
-    mode: str = "default"  # "default" | "live" | "blocking" | "catchup"
+    mode: str = "default"  # "default" | "drop" | "blocking" | "catchup"
     #: Only used when mode="catchup". Topic to monitor for finalized segment_ids to skip.
     skip_if_finalized: str | None = None
     enabled: bool = True

@@ -40,7 +40,7 @@ class BackendChoice(str, Enum):
 
 
 class BufferChoice(str, Enum):
-    live = "live"
+    drop = "drop"
     block = "block"
 
 
@@ -117,7 +117,7 @@ def _demo_config(
     websocket_port: int | None = None,
 ) -> GraphConfig:
     """Build the fixed demo graph.  No filesystem config is consulted."""
-    mode = "live" if buffer is BufferChoice.live else "blocking"
+    mode = "drop" if buffer is BufferChoice.drop else "blocking"
 
     if source is SourceChoice.ffmpeg:
         if not source_input:
@@ -321,7 +321,7 @@ def register(app: typer.Typer) -> None:
             help="Output language.",
         ),
         buffer_mode: BufferChoice = typer.Option(
-            "live", help="Queue policy: live or block."
+            "drop", help="Queue policy: drop (oldest) or block."
         ),
         seconds: float = typer.Option(
             0.0, help="Stop after N seconds; 0 runs until input ends or Ctrl-C."
@@ -462,7 +462,7 @@ def register(app: typer.Typer) -> None:
             dropped = graph.bus.total_dropped()
             if dropped:
                 typer.secho(
-                    f"\n  {dropped} queued items dropped in live mode.",
+                    f"\n  {dropped} queued items dropped in drop mode.",
                     fg=typer.colors.YELLOW,
                     err=True,
                 )

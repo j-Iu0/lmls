@@ -109,7 +109,7 @@ async def test_audio_topics_drop_oldest_under_pressure():
     bus = _bus_with_audio_topic()
     bus.register_publisher("audio.raw")
     sub = bus.subscribe("audio.raw", "vad", maxsize=4)
-    assert sub.mode == "live"
+    assert sub.mode == "drop"
 
     for i in range(10):
         await bus.publish("audio.raw", _frame(i))  # never blocks
@@ -143,9 +143,9 @@ async def test_mode_defaults_are_decided_by_registered_type_not_name():
     bus = Bus()
     bus.register_topic_type("pipe.one", AudioFrame)
     bus.register_topic_type("pipe.two", TextFrame)
-    live = bus.subscribe("pipe.one", "a")
+    drop = bus.subscribe("pipe.one", "a")
     blocking = bus.subscribe("pipe.two", "b")
-    assert live.mode == "live"
+    assert drop.mode == "drop"
     assert blocking.mode == "blocking"
 
 
@@ -235,7 +235,7 @@ async def test_catchup_subscriber_gets_everything_in_order_and_skips_finalized()
 
     seen = await asyncio.wait_for(consumer, timeout=1.0)
     assert seen == ["u2", "u3"], "u1 was already transcribed by the live node"
-    # the live subscriber still received all three
+    # the drop subscriber still received all three
     got_live = [e.id async for e in live_sub]
     assert got_live == ["u1", "u2", "u3"]
 
@@ -264,7 +264,7 @@ async def test_report_counts_traffic_per_subscriber():
 
     report = bus.report()["audio.raw"]
     assert report["published"] == 5
-    assert report["mode"] == "live"
+    assert report["mode"] == "drop"
     assert report["policy"] == "drop_oldest"  # backward-compatible alias
     assert report["subscribers"]["vad"]["dropped"] == 3
     assert report["subscribers"]["recorder"]["dropped"] == 0

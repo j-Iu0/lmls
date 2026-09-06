@@ -355,12 +355,12 @@ what happens to a payload between one module's return and the next module's
 
 | Mode | Behaviour | Queue | Default for |
 |---|---|---|---|
-| `"live"` | Fixed-size queue; **oldest item dropped** when full. Always delivers the latest. | 256 items | topics carrying `AudioFrame` |
+| `"drop"` | Fixed-size queue; **oldest item dropped** when full. Always delivers the latest. | 256 items | topics carrying `AudioFrame` |
 | `"blocking"` | Publisher **awaits** when the queue is full; back-pressures upstream. Nothing is lost. | 64 items | everything else |
 | `"catchup"` | Shared ring buffer; publisher never blocks. Subscriber reads at its own pace from its position, catching up when capacity allows. Items overwritten before a slow reader arrives are gone. | 512 (ring) | opt-in via config |
 
 The default mode for a topic is determined by its registered payload type
-(`AudioFrame` → `"live"`, anything else → `"blocking"`); wiring can override it per
+(`AudioFrame` → `"drop"`, anything else → `"blocking"`); wiring can override it per
 node with the `mode` config key (§8.3).
 
 ### 6.3 Revision stamping and finalisation

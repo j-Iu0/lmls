@@ -70,7 +70,7 @@ Backpressure is chosen per subscription mode, and the difference is not cosmetic
 
 | Topic / payload | Mode | Why |
 | --- | --- | --- |
-| `audio.*` (`AudioFrame`) | **live** (drop oldest) | Live capture cannot be slowed down. When a stage falls behind, the choice is to lose stale audio or grow memory without bound. Drops are counted and reported, never hidden. |
+| `audio.*` (`AudioFrame`) | **drop** (drop oldest) | Live capture cannot be slowed down. When a stage falls behind, the choice is to lose stale audio or grow memory without bound. Drops are counted and reported, never hidden. |
 | `utterance.*` (`Utterance`) | **blocking** | An utterance is a complete speech event. Losing one silently means losing a subtitle line. |
 | `text.*` (`TextFrame`) | **blocking** | Sentences are rare and precious. Delaying one beats losing it, and blocking propagates backpressure upstream where it belongs. |
 | `audio.*` **offline** | blocking | Set by `bench` when not pacing at wall-clock speed. A file outruns the ASR instantly, and dropping frames would corrupt the *word error rate*, not just the latency. A file can wait. |

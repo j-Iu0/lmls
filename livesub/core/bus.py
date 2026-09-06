@@ -15,7 +15,7 @@ it exists, while the translator takes as long as it needs.
 
 Backpressure is chosen per subscription *mode*, and the difference matters:
 
-* **``"live"`` -- drop oldest.** Audio topics default to this. A slow LLM must never
+* **``"drop"`` -- drop oldest.** Audio topics default to this. A slow LLM must never
   make the microphone lag or grow memory without bound. Dropping a 20 ms frame of
   already-stale audio is the correct loss. Drops are counted and reported rather than
   hidden.
@@ -46,7 +46,7 @@ from typing import Any, AsyncIterator, Literal
 from .types import AudioFrame, TextFrame, Utterance
 
 Policy = Literal["drop_oldest", "block"]
-SubscriptionMode = Literal["blocking", "live", "catchup"]
+SubscriptionMode = Literal["blocking", "drop", "catchup"]
 
 #: Sentinel put on every subscriber queue when a topic's last publisher closes.
 _CLOSED = object()
@@ -84,10 +84,10 @@ class Subscription:
     @property
     def policy(self) -> Policy:
         """Backward-compatible alias for the pre-mode naming."""
-        return "drop_oldest" if self.mode == "live" else "block"
+        return "drop_oldest" if self.mode == "drop" else "block"
 
     def _offer(self, item: Any) -> None:
-        """Non-blocking delivery used by live topics."""
+        """Non-blocking delivery used by drop topics."""
         try:
             self.queue.put_nowait(item)
         except asyncio.QueueFull:
@@ -259,7 +259,7 @@ class TopicStats:
     def policy(self) -> str:
         """Backward-compatible alias for the pre-mode naming."""
         return {
-            "live": "drop_oldest",
+            "drop": "drop_oldest",
             "catchup": "catchup",
             "blocking": "block",
         }.get(self.mode, self.mode)
@@ -288,12 +288,12 @@ class Bus:
 
         Decided purely by the topic's registered payload type: live audio must never be
         blocked, text must never be dropped. An unregistered topic defaults to
-        ``"blocking"`` -- the safe choice, since guessing ``"live"`` could silently drop
+        ``"blocking"`` -- the safe choice, since guessing ``"drop"`` could silently drop
         data. The graph registers every topic's type during wiring, before any
         subscription is made, so this only ever matters for hand-built buses.
         """
         if self._topic_types.get(topic) is AudioFrame:
-            return "live"
+            return "drop"
         return "blocking"  # Utterance, TextFrame, unregistered -> blocking
 
     def topic_type(self, topic: str) -> type | None:
@@ -389,7 +389,7 @@ class Bus:
         for sub in subs:
             if isinstance(sub, CatchupSubscription):
                 continue  # delivery happens via the ring buffer
-            if sub.mode == "live":
+            if sub.mode == "drop":
                 sub._offer(payload)
             else:
                 await sub._deliver(payload)

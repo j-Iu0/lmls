@@ -27,7 +27,7 @@ def build_demo(**overrides):
         "ffmpeg_device": False,
         "backend": BackendChoice.whisper_ollama,
         "target": "vi",
-        "buffer": BufferChoice.live,
+        "buffer": BufferChoice.drop,
     }
     options.update(overrides)
     return _demo_config(**options)
@@ -104,12 +104,12 @@ def test_unsupported_model_selection_is_ignored_with_a_warning(monkeypatch, caps
 
 
 def test_demo_buffer_mode_never_uses_catchup():
-    live = build_demo(buffer=BufferChoice.live)
+    drop = build_demo(buffer=BufferChoice.drop)
     block = build_demo(buffer=BufferChoice.block)
 
-    assert {n.mode for n in live.nodes if n.inputs} == {"live"}
+    assert {n.mode for n in drop.nodes if n.inputs} == {"drop"}
     assert {n.mode for n in block.nodes if n.inputs} == {"blocking"}
-    assert all(n.mode != "catchup" for n in live.nodes + block.nodes)
+    assert all(n.mode != "catchup" for n in drop.nodes + block.nodes)
 
 
 def test_language_flag_is_normalised_and_required():

@@ -162,7 +162,7 @@ For ffmpeg inputs, the same file or URL is played aloud with `ffplay` while it i
 captioned; `--start` and `--seconds` apply to both paths. Use `--no-audio` to caption
 silently. Microphone input is not played back, avoiding an acoustic feedback loop.
 
-Models are loaded and warmed **before** capture begins. `--buffer-mode live` stays current
+Models are loaded and warmed **before** capture begins. `--buffer-mode drop` stays current
 by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
 nothing. Startup events show model-loading progress before capture, and startup failures
 exit cleanly with the module's error. The catch-up mode is intentionally not available in

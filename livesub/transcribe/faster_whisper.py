@@ -4,10 +4,10 @@ Present so the project runs on machines that are not Apple Silicon, and so the c
 about MLX in the report is checkable rather than asserted: run both on the same fixture
 and compare.
 
-Be clear about what this is on *this* hardware. CTranslate2 has **no Metal backend**, so
-on an M-series Mac this executes on the CPU cores and leaves the GPU idle. It is not a
-slower way of doing the same thing -- it is a different device. On a machine with an
-NVIDIA GPU the position reverses completely and this becomes the fast option.
+CTranslate2 has **no Metal backend**, so on an M-series Mac this executes on the
+CPU cores and leaves the GPU idle. It is not a slower way of doing the same
+thing -- it is a different device. On a machine with an NVIDIA GPU the position
+reverses completely and this becomes the fast option.
 
 ``int8`` is the right quantisation for CPU inference: CTranslate2's int8 GEMM kernels are
 what make CPU Whisper viable at all, and on speech the accuracy cost against float16 is
