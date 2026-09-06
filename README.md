@@ -259,6 +259,25 @@ python -m livesub.input mic --raw \
 
 ## Attaching a user interface
 
+### Local graph editor
+
+```bash
+pip install -e '.[web]'
+python -m livesub web
+# Open http://127.0.0.1:8080
+```
+
+Livesub Studio provides a typed node editor, TOML/JSON import and export, a resizable
+subtitle monitor, interactive file playback with text overlays and automatic pause,
+and live startup/profiling/error diagnostics. Run locks the graph; Stop unlocks it.
+Seeking resets the processing generation and discards previous subtitles. The initial
+graph uses clearly labelled mock models; interactive files require FFmpeg.
+
+See [the Studio guide](docs/web-studio.md) for controls, configuration, limitations,
+the API, and justification for every runtime extension.
+
+### Existing WebSocket sink
+
 The pipeline serves every subtitle event over a WebSocket (`ws://localhost:8765` in
 `config/default.toml`). A UI subscribes and applies one rule:
 

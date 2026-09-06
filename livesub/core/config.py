@@ -263,17 +263,51 @@ def _parse_node(raw: dict[str, Any], index: int) -> NodeConfig:
     )
 
 
+def config_from_dict(data: dict[str, Any], source_path: Path | None = None) -> GraphConfig:
+    """Parse the same config document from a file, an API, or an editor.
+
+    Parsing validates port declarations without constructing modules or loading models.
+    Unknown top-level settings are retained so consumers can round-trip extensions.
+    """
+    if not isinstance(data, dict):
+        raise ConfigError("configuration must be an object")
+    raw_nodes = data.get("node", [])
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise ConfigError("configuration declares no [[node]] entries")
+    if not all(isinstance(n, dict) for n in raw_nodes):
+        raise ConfigError("every node must be an object")
+    nodes = [_parse_node(raw, i) for i, raw in enumerate(raw_nodes)]
+    settings = {k: v for k, v in data.items() if k != "node"}
+    return GraphConfig(nodes=nodes, settings=settings, source_path=source_path)
+
+
+def config_to_dict(cfg: GraphConfig) -> dict[str, Any]:
+    """Serialize a graph to the public TOML/JSON document shape, including fan-in."""
+    import copy
+
+    data = copy.deepcopy(cfg.settings)
+    data["node"] = []
+    for node in cfg.nodes:
+        raw = copy.deepcopy(node.options)
+        raw.update(name=node.name, impl=node.impl, enabled=node.enabled, mode=node.mode)
+        if node.skip_if_finalized is not None:
+            raw["skip_if_finalized"] = node.skip_if_finalized
+        if node.inputs:
+            cls = resolve(node.impl)
+            # Synthetic fan-in keys are internal; the public form is a topic list.
+            raw["in"] = (list(node.inputs.values()) if len(cls.inputs) == 1
+                         and len(node.inputs) > 1 else dict(node.inputs))
+        if node.outputs:
+            raw["out"] = dict(node.outputs)
+        data["node"].append(raw)
+    return data
+
+
 def load_config(path: str | Path) -> GraphConfig:
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
-    data = tomllib.loads(path.read_text())
-    raw_nodes = data.get("node", [])
-    if not raw_nodes:
-        raise ConfigError(f"{path} declares no [[node]] entries")
-    nodes = [_parse_node(raw, i) for i, raw in enumerate(raw_nodes)]
-    settings = {k: v for k, v in data.items() if k != "node"}
-    return GraphConfig(nodes=nodes, settings=settings, source_path=path)
+    return config_from_dict(tomllib.loads(path.read_text()), source_path=path)
 
 
 # -- chain shorthand ---------------------------------------------------------
