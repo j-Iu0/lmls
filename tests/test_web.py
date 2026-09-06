@@ -167,3 +167,83 @@ async def test_fast_final_before_upstream_observer_does_not_stall_auto_pause(cli
     assert not snap['media']['media']['auto_paused']
     assert snap['subtitles'][-1]['source'] == 'media'
     await ws.close()
+
+
+async def test_empty_asr_result_releases_auto_pause_after_processing_settles(client, monkeypatch):
+    from livesub.transcribe.mock import MockTranscriber
+    started, release = asyncio.Event(), asyncio.Event()
+    original = MockTranscriber.process
+    async def empty_final(self, utterance):
+        if not utterance.is_final:
+            return await original(self, utterance)
+        started.set()
+        await release.wait()
+        return []
+    monkeypatch.setattr(MockTranscriber, 'process', empty_final)
+    session = client.server.app[SESSION]
+    ws = await client.ws_connect('/api/events')
+    await client.post('/api/run', json={'config': session.config})
+    await wait_state(session, {'running', 'failed'})
+    for position in (0, 1, 2, 3, 4):
+        session.clock('media', position, False, session.epoch)
+        await asyncio.sleep(.05)
+    await asyncio.wait_for(started.wait(), 3)
+    assert session.snapshot()['media']['media']['auto_paused']
+    await asyncio.sleep(.55)
+    assert session.snapshot()['media']['media']['auto_paused'], 'busy ASR must still hold playback'
+    release.set()
+    async with asyncio.timeout(3):
+        while session.snapshot()['media']['media']['auto_paused']:
+            await asyncio.sleep(.05)
+    assert any('completed without text' in row['message'] for row in session.logs)
+    await ws.close()
+
+
+async def test_two_file_branches_keep_subtitle_timing_and_ids_separate(client):
+    session = client.server.app[SESSION]
+    doc = copy.deepcopy(session.config)
+    other = copy.deepcopy(doc['nodes'])
+    for n in other:
+        n['name'] += '_b'
+        n['inputs'] = {p: t + '.b' for p, t in n['inputs'].items()}
+        n['outputs'] = {p: t + '.b' for p, t in n['outputs'].items()}
+    doc['nodes'].extend(other)
+    doc['editor']['overlays']['media_b'] = 'text.translated.b'
+    doc['editor']['auto_pause']['media_b'] = True
+    ws = await client.ws_connect('/api/events')
+    result = await client.post('/api/run', json={'config': doc})
+    assert result.status == 200, await result.text()
+    await wait_state(session, {'running', 'failed'})
+    for position in (0, 1, 2, 3, 4):
+        for source in ('media', 'media_b'):
+            session.clock(source, position, False, session.epoch)
+        await asyncio.sleep(.15)
+    async with asyncio.timeout(4):
+        while len([s for s in session.subtitles.values() if s['is_final'] and s['topic'].startswith('text.translated')]) < 2:
+            await asyncio.sleep(.05)
+    rows = [s for s in session.subtitles.values() if s['is_final'] and s['topic'].startswith('text.translated')]
+    assert {s['source'] for s in rows} == {'media', 'media_b'}
+    assert len({s['segment_id'] for s in rows}) == 2
+    assert all(s['source'] == ('media_b' if s['topic'].endswith('.b') else 'media') for s in rows)
+    await ws.close()
+
+
+async def test_optional_translator_socket_does_not_steal_default_output(client):
+    session = client.server.app[SESSION]
+    doc = copy.deepcopy(session.config)
+    translator = next(n for n in doc['nodes'] if n['name'] == 'translate')
+    translator['outputs'] = {'text_out': 'z.translation', 'corrected': 'a.optional'}
+    doc['editor']['subtitle_topics'] = ['z.translation', 'a.optional']
+    doc['editor']['overlays']['media'] = 'z.translation'
+    ws = await client.ws_connect('/api/events')
+    result = await client.post('/api/run', json={'config': doc})
+    assert result.status == 200, await result.text()
+    await wait_state(session, {'running', 'failed'})
+    for position in (0, 1, 2, 3, 4):
+        session.clock('media', position, False, session.epoch)
+        await asyncio.sleep(.1)
+    async with asyncio.timeout(3):
+        while not any(s['topic'] == 'z.translation' for s in session.subtitles.values()):
+            await asyncio.sleep(.05)
+    assert not any(s['topic'] == 'a.optional' for s in session.subtitles.values())
+    await ws.close()

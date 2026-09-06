@@ -47,6 +47,9 @@ format. Global settings and unknown extension tables are preserved. The optional
 `[editor]` table stores node positions, subtitle subscriptions, overlay topics, and
 automatic-pause choices. Export is the portable save operation. Layout/local draft
 storage belongs only to this browser; it does not alter an on-disk config.
+TOML has no null value: constructor options explicitly set to their default null
+are omitted without changing behavior. Other null values require JSON export,
+with an error identifying the unrepresentable option or setting.
 
 Uploads are streamed to temporary files and limited to 2 GiB. They are deleted
 when the server exits. To reuse an exported config across server sessions, put the
@@ -78,9 +81,10 @@ The decoder can read 0.5 seconds ahead of the displayed video so trailing silenc
 can finalize an utterance. Partials do not trigger pausing: some correction and
 translation modules intentionally discard partials. This keeps completed speech
 current; it does not promise captions before an utterance has been segmented.
-If the selected module suppresses a final output, playback remains paused and the
-status identifies the outstanding subtitle; use diagnostics and Stop to adjust
-the pipeline. Automatic pause requires an attached text output that originates
+If processing settles without a final output (for example, ASR rejects an empty
+recognition), playback resumes and diagnostics records the missing text. In-flight
+processing and queued work keep playback paused; a long-running operation is
+identified in the status. Automatic pause requires an attached text output that originates
 only from that file, avoiding ambiguous synchronization across mixed inputs.
 
 The web driver adapts local `wav` and non-device `ffmpeg` sources to the same
@@ -123,10 +127,17 @@ One server owns one active graph; all connected tabs share its controls.
 | `Graph.on_event` / `snapshot`, bus delivery return and queue depth | Observe arbitrary typed modules without injecting web code into each module or adding consumers that alter backpressure. See [runtime changes](web-runtime-changes.md). |
 | Graph startup, shutdown, and pump cleanup | Repeated Run/Stop/Seek requires reliable ownership of devices and workers, especially after failed or cancelled startup. CLI callers benefit from the same fixes. |
 | Bounded metrics and corrected stage accounting | A continuously open monitor needs bounded samples and accurate operation counts. Inherited lineage timings were being counted repeatedly. |
+| In-flight operation counts and optional segment namespaces | The web driver uses actual processing/publication activity to distinguish pending inference from completion without text. Namespaces keep segmenters that each generate `u0001` from overwriting one another's captions. Namespacing is opt-in; existing CLI IDs remain unchanged. |
+| `Module.default_output` and declarations on the mock, MLX, and cloud translators | These multi-output modules return a bare translated frame in faithful mode. When both sockets are connected, its destination must be the declared `text_out` port, never whichever topic sorts first. Existing standalone return values are preserved; named dictionary outputs retain their explicit routing. |
 | `web` package | Isolates HTTP, media access, generation handling, UI history, and editor-only metadata from the inference modules. Transport schemas are documented below. |
 | CLI `web`, optional dependencies, static package data | Makes the frontend installable and runnable from the existing command. `aiohttp` handles HTTP/WebSockets/ranged files; `tomli-w` writes valid TOML. Neither is required for core CLI use. |
 
 ## API
+
+Development checks use `python -m pytest` with the web extra installed, plus
+`node --test tests/frontend/*.test.mjs` for graph and playback state logic.
+The frontend is served directly as browser modules; no JavaScript build or CDN
+is required. Live Ollama tests additionally require the configured model.
 
 - `GET /api/bootstrap`: module catalog, editor document, and session snapshot.
 - `POST /api/config/import`: `{text, format}` to an editor document.

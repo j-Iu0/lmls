@@ -50,6 +50,11 @@ class Module(ABC):
     #: Empty dict means this is a sink (no outputs).
     outputs: ClassVar[dict[str, type]] = {}
 
+    #: Optional destination for a bare result from a multi-output module. Named
+    #: dictionary results still select their own ports. Topic names never select
+    #: the default; unconnected default ports intentionally publish nothing.
+    default_output: ClassVar[str | None] = None
+
     def __init__(self) -> None:
         # ``name`` is set by the registry after construction; initialised here as an
         # instance variable so subclasses that call super().__init__() see a real

@@ -30,7 +30,7 @@ from .interfaces import Module
 from .metrics import Metrics
 from .registry import build, resolve
 from .startup import StartupCallback
-from .types import AudioFrame, TextFrame
+from .types import AudioFrame, TextFrame, Utterance
 
 log = logging.getLogger("livesub.graph")
 
@@ -198,11 +198,13 @@ class Graph:
 
     def __init__(self, cfg: GraphConfig, bus: Bus | None = None,
                  on_startup: StartupCallback | None = None,
-                 on_event: Callable[[dict[str, Any]], None] | None = None):
+                 on_event: Callable[[dict[str, Any]], None] | None = None,
+                 namespace_segments: bool = False):
         self.config = cfg
         self.bus = bus or Bus()
         self._on_startup = on_startup
         self._on_event = on_event
+        self._namespace_segments = namespace_segments
         self.warnings = validate(cfg)
         for w in self.warnings:
             log.warning("%s", w)
@@ -232,6 +234,7 @@ class Graph:
         self._aborted = False
         self._states = {n.config.name: {"state": "pending", "message": ""}
                         for n in self.nodes}
+        self._in_flight = {n.config.name: 0 for n in self.nodes}
 
     def _emit(self, event: dict[str, Any]) -> None:
         """Synchronous, loop-thread notification; no event history is retained."""
@@ -259,11 +262,14 @@ class Graph:
             count = self.metrics.stage_counts.get(name, 0)
             total = self.metrics.stage_totals.get(name, 0.0)
             samples = self.metrics.stage_ms.get(name)
-            info = {**self._states[name], "processing": {
-                "count": count, "total_ms": total,
-                "mean_ms": total / count if count else 0.0,
-                "last_ms": samples[-1] if samples else 0.0,
-            }}
+            info = {
+                **self._states[name], "in_flight": self._in_flight[name],
+                "processing": {
+                    "count": count, "total_ms": total,
+                    "mean_ms": total / count if count else 0.0,
+                    "last_ms": samples[-1] if samples else 0.0,
+                },
+            }
             if not node.stage.inputs:
                 try:
                     diagnostics = node.stage.describe()
@@ -444,7 +450,23 @@ class Graph:
         topic = node.config.out_topics[0]
         async with contextlib.aclosing(stage.run()) as stream:
             async for payload in stream:
-                await self._publish(node, topic, payload)
+                await self._publish(node, topic, self._namespace_origin(node, payload))
+
+    def _namespace_origin(self, node: BuiltNode, payload: Any) -> Any:
+        """Scope locally originating segment IDs without retaining an ID map."""
+        if not self._namespace_segments:
+            return payload
+        if isinstance(payload, Utterance):
+            return dataclasses.replace(payload, id=json.dumps(
+                [node.config.name, payload.id], separators=(",", ":")
+            ))
+        if isinstance(payload, TextFrame):
+            return dataclasses.replace(payload, lineage=dataclasses.replace(
+                payload.lineage, segment_id=json.dumps(
+                    [node.config.name, payload.segment_id], separators=(",", ":")
+                )
+            ))
+        return payload
 
     async def _run_transform(self, node: BuiltNode) -> None:
         stage = node.stage
@@ -491,6 +513,7 @@ class Graph:
             finally:
                 elapsed = time.perf_counter() - t0
 
+        self._in_flight[node.config.name] += 1
         try:
             if is_async:
                 invoked = True
@@ -511,17 +534,24 @@ class Graph:
                     raise
             return result, elapsed
         finally:
-            if invoked:
-                self.metrics.record_stage(node.config.name, elapsed * 1000)
-                self._emit({"kind": "processing", "node": node.config.name,
-                            "elapsed_ms": elapsed * 1000})
+            try:
+                if invoked:
+                    self.metrics.record_stage(node.config.name, elapsed * 1000)
+                    self._emit({"kind": "processing", "node": node.config.name,
+                                "elapsed_ms": elapsed * 1000})
+            finally:
+                self._in_flight[node.config.name] -= 1
 
     async def _publish(self, node: BuiltNode, topic: str, payload: Any) -> None:
-        payload = await self.bus.publish(topic, payload)
-        if isinstance(payload, TextFrame):
-            self.metrics.record_event(payload)
-        self._emit({"kind": "output", "node": node.config.name,
-                    "topic": topic, "payload": payload})
+        self._in_flight[node.config.name] += 1
+        try:
+            payload = await self.bus.publish(topic, payload)
+            if isinstance(payload, TextFrame):
+                self.metrics.record_event(payload)
+            self._emit({"kind": "output", "node": node.config.name,
+                        "topic": topic, "payload": payload})
+        finally:
+            self._in_flight[node.config.name] -= 1
 
     async def _publish_result(
         self, node: BuiltNode, result: Any, source_payload: Any, elapsed_s: float
@@ -544,6 +574,10 @@ class Graph:
             items = [(None, result)]
 
         for port_name, payload in items:
+            if isinstance(payload, Utterance) and (
+                not isinstance(source_payload, Utterance) or payload.id != source_payload.id
+            ):
+                payload = self._namespace_origin(node, payload)
             # Inject stage latency into Lineage for TextFrames
             if isinstance(payload, TextFrame):
                 payload = dataclasses.replace(
@@ -557,9 +591,18 @@ class Graph:
             if port_name is not None:
                 topic = node.config.topic_for_port(port_name)
             else:
-                # Bare payload: the module publishes everything it makes to its single
-                # output topic. (A multi-port module must return a dict keyed by port.)
-                topic = node.config.out_topics[0]
+                # A multi-port module may explicitly declare its bare-result port.
+                # Sorting topic strings would otherwise reroute a translation when
+                # an editor connects its optional correction output.
+                default_port = node.stage.default_output
+                if default_port is not None:
+                    if default_port not in node.stage.outputs:
+                        raise GraphError(f"{node.config.name}: default output {default_port!r} is not declared")
+                    topic = node.config.topic_for_port(default_port)
+                elif len(node.config.outputs) == 1:
+                    topic = next(iter(node.config.outputs.values()))
+                else:
+                    raise GraphError(f"{node.config.name}: multiple outputs require a named result or default_output")
 
             if topic is None:
                 log.debug(

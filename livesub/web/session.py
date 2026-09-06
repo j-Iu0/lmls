@@ -14,6 +14,7 @@ from typing import Any
 from ..core.codec import event_to_dict
 from ..core.config import GraphConfig
 from ..core.graph import Graph
+from ..core.registry import resolve
 from ..core.startup import StartupEvent
 from ..core.types import AudioFrame, TextFrame, Utterance
 from ..input.media import ControlledMediaSource
@@ -57,7 +58,6 @@ class Session:
 
     def _runtime_config(self, offsets: dict[str, float]) -> GraphConfig:
         cfg = from_editor(copy.deepcopy(self.config))
-        cfg.settings["audio_backpressure"] = "block"
         # These file transports have identical AudioFrame ports. Preserve the saved
         # implementation/options; select the clocked adapter only for this web run.
         for n in cfg.active:
@@ -73,9 +73,13 @@ class Session:
                 n.impl = "media"
                 n.options = {**n.options, "url": str(path),
                              "start_seconds": offsets.get(n.name, 0), "loop": False}
-                # A clocked file must not silently drop audio even if an imported
-                # preset selected realtime dropping. Other source branches keep modes.
                 n.options.pop("path", None)
+        self._routing(cfg)
+        media_names = {n.name for n in cfg.active if n.impl == 'media'}
+        for n in cfg.active:
+            if (n.mode == 'default' and AudioFrame in resolve(n.impl).inputs.values()
+                    and self.ancestors[n.name] and self.ancestors[n.name] <= media_names):
+                n.mode = 'blocking'
         return cfg
 
     def _routing(self, cfg: GraphConfig) -> None:
@@ -136,7 +140,7 @@ class Session:
         loop = asyncio.get_running_loop()
         try:
             graph = Graph(cfg, on_startup=lambda event: loop.call_soon_threadsafe(self._startup, epoch, event),
-                          on_event=lambda event: self._event(epoch, event))
+                          on_event=lambda event: self._event(epoch, event), namespace_segments=True)
             self.graph = graph
             self._routing(cfg)
             for node in graph.nodes:
@@ -314,6 +318,22 @@ class Session:
                 item['startup'] = self.startup[name]
         for name, source in self.sources.items():
             info = self.media[name]
+            selected = self.config['editor'].get('overlays', {}).get(name)
+            relevant = {n for n, topics in self.downstream_topics.items()
+                        if selected in topics and name in self.ancestors.get(n, set())}
+            settled = (relevant and self.state == 'running'
+                       and all(nodes.get(n, {}).get('in_flight', 0) == 0 for n in relevant)
+                       and all(s.get('depth', 0) == 0 for t in bus.values()
+                               for n, s in t['subscribers'].items() if n in relevant))
+            if settled:
+                # Some ASR/correction implementations intentionally return no text.
+                # Once every route has settled, waiting for a nonexistent caption
+                # would deadlock playback. A short grace keeps a newly observed
+                # publication from being classified during the first snapshot.
+                for segment, started in list(self.pending[name].items()):
+                    if time.monotonic() - started >= .5:
+                        self.pending[name].pop(segment)
+                        self.log('warning', f'Segment {segment} completed without text on {selected}', name)
             count = len(self.pending[name])
             auto = bool(self.config['editor'].get('auto_pause', {}).get(name))
             info.update(decoded_s=source.position, pending=count,

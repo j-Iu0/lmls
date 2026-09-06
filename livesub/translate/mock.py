@@ -50,6 +50,7 @@ class MockTranslator(Module):
     """
 
     inputs: ClassVar[dict[str, type]] = {"text_in": TextFrame}
+    default_output = "text_out"
     outputs: ClassVar[dict[str, type]] = {
         "text_out": TextFrame,
         "corrected": TextFrame,

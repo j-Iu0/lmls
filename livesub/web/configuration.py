@@ -81,7 +81,7 @@ def from_editor(data: dict[str, Any]) -> GraphConfig:
         if not all(isinstance(t, str) and t for t in [*ins.values(), *outs.values()]):
             raise ConfigError("topic names must be nonempty strings")
         if ins:
-            if len(cls.inputs) == 1 and len(ins) > 1:
+            if len(cls.inputs) == 1 and (len(ins) > 1 or set(ins) != set(cls.inputs)):
                 base = next(iter(cls.inputs))
                 if any(p != base and not (p.startswith(base + "_") and p[len(base)+1:].isdigit())
                        for p in ins):
@@ -117,6 +117,9 @@ def validate_editor(data: dict[str, Any]) -> tuple[GraphConfig, list[str]]:
     for name, topic in ed.get("overlays", {}).items():
         if name not in names or (topic and topic not in topics):
             raise ConfigError(f"invalid overlay connection for {name!r}")
+    observed = set(selected) | {t for t in ed.get('overlays', {}).values() if t}
+    warnings = [w for w in warnings if w not in {
+        f"topic {t!r} is published but nobody subscribes to it" for t in observed}]
     return cfg, warnings
 
 
@@ -135,6 +138,24 @@ def export_document(data: dict[str, Any], format: str) -> str:
         return json.dumps(raw, indent=2, ensure_ascii=False) + "\n"
     if format != "toml":
         raise ConfigError("format must be json or toml")
+    for node in raw['node']:
+        params = inspect.signature(resolve(node['impl']).__init__).parameters
+        for key in list(node):
+            if node[key] is None:
+                if key in params and params[key].default is None:
+                    del node[key]  # omission means exactly the same constructor value
+                else:
+                    raise ConfigError(f"{node['name']}.{key}: TOML cannot represent null; export JSON")
+    def reject_null(value, path='config'):
+        if value is None:
+            raise ConfigError(f"{path}: TOML cannot represent null; export JSON")
+        if isinstance(value, dict):
+            for key, child in value.items():
+                reject_null(child, f'{path}.{key}')
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                reject_null(child, f'{path}[{index}]')
+    reject_null(raw)
     import tomli_w
     return tomli_w.dumps(raw)
 
