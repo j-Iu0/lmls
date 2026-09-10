@@ -263,6 +263,7 @@ python -m livesub.input mic --raw \
 
 ```bash
 pip install -e '.[web]'
+cd studio && deno install && deno task build && cd ..
 python -m livesub web
 # Open http://127.0.0.1:8080
 ```
@@ -271,10 +272,12 @@ Livesub Studio provides a typed node editor, TOML/JSON import and export, a resi
 subtitle monitor, interactive file playback with text overlays and automatic pause,
 and live startup/profiling/error diagnostics. Run locks the graph; Stop unlocks it.
 Seeking resets the processing generation and discards previous subtitles. The initial
-graph uses clearly labelled mock models; interactive files require FFmpeg.
+graph uses clearly labelled mock models; interactive files require FFmpeg. A missing
+build returns setup instructions.
 
-See [the Studio guide](docs/web-studio.md) for controls, configuration, limitations,
-the API, and justification for every runtime extension.
+See [the Studio guide](studio/README.md) for controls and development checks, and
+[the integration notes](docs/studio-integration.md) for the backend API, media and
+seek semantics, and justification for every runtime extension.
 
 ### Existing WebSocket sink
 
