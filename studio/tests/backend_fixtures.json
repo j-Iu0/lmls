@@ -1,0 +1,2175 @@
+{
+  "catalog": [
+    {
+      "impl": "cloud_llm_corrector",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "provider",
+          "default": "anthropic",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "model",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "api_key",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "max_tokens",
+          "default": 160,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "timeout",
+          "default": 8.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "min_similarity",
+          "default": 0.4,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "correct_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nprovider: ``anthropic`` or ``openai``.\nmodel: provider model id; a sensible default per provider if omitted.\napi_key: falls back to ``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY``.\ntimeout: fail fast -- a late subtitle is worthless.\ncontext_lines: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "cloud_llm_translator",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame",
+        "corrected": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "provider",
+          "default": "anthropic",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "model",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "api_key",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 220,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "timeout",
+          "default": 8.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "repair_mode",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "translate_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+    },
+    {
+      "impl": "collect",
+      "inputs": {
+        "text": "TextFrame"
+      },
+      "outputs": {},
+      "options": [],
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+    },
+    {
+      "impl": "deepfilternet",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "chunk_ms",
+          "default": 40,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "atten_lim_db",
+          "default": 25.0,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "Args:\nchunk_ms: audio buffered per forward pass. DeepFilterNet's own hop is 10 ms, but\n    calling it per 20 ms frame from Python costs more in overhead than in\n    compute, so a slightly larger block is the sane default.\natten_lim_db: cap on suppression. Unlimited suppression sounds cleaner to a human\n    but removes low-energy consonants an ASR relies on; 20-30 dB is a good range."
+    },
+    {
+      "impl": "energy",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "utterance": "Utterance"
+      },
+      "options": [
+        {
+          "name": "silence_ms",
+          "default": 220.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "min_speech_ms",
+          "default": 400.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "max_utterance_ms",
+          "default": 6000.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "pre_roll_ms",
+          "default": 250.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "flush_search_ms",
+          "default": 700.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "partial_every_ms",
+          "default": 900.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "partial_min_ms",
+          "default": 700.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "start_db",
+          "default": 10.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "continue_db",
+          "default": 5.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "max_flatness",
+          "default": 0.45,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "adapt",
+          "default": 0.03,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "absolute_floor_dbfs",
+          "default": -55.0,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "Pipeline node wrapping the energy VAD segmenter.\n\nDeclares the port shape that makes segmentation a first-class graph stage:\naudio frames in, utterances out. ``process`` returns a list because one frame\ncan complete zero or more utterances; ``drain`` flushes the utterance still\nbeing accumulated when the audio ends."
+    },
+    {
+      "impl": "faster_whisper",
+      "inputs": {
+        "audio": "Utterance"
+      },
+      "outputs": {
+        "text": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "small.en",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "compute_type",
+          "default": "int8",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "device",
+          "default": "auto",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "language",
+          "default": "en",
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "beam_size",
+          "default": 1,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "min_utterance_ms",
+          "default": 300.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "segmenter",
+          "default": "energy",
+          "required": false,
+          "annotation": "str"
+        }
+      ],
+      "description": "Args:\nmodel: model size or a CTranslate2 model directory (``small.en``, ``base.en``,\n    ``distil-small.en``, ...).\ncompute_type: ``int8`` on CPU, ``float16`` on CUDA.\ndevice: ``cpu``, ``cuda`` or ``auto``. On Apple Silicon this is always CPU.\nbeam_size: 1 is greedy. Beam search costs latency for a small accuracy gain and\n    is rarely worth it live.\nsegmenter: only used by the offline ``transcribe_array`` path (the graph puts a\n    segmenter node upstream)."
+    },
+    {
+      "impl": "ffmpeg",
+      "inputs": {},
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "url",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "source",
+          "default": null,
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "device",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "realtime",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "loop",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "ffmpeg",
+          "default": "ffmpeg",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "extra_args",
+          "default": null,
+          "required": false,
+          "annotation": "list[str] | None"
+        }
+      ],
+      "description": "Decode any ffmpeg-readable source to the canonical frame format.\n\nArgs:\n    url: file path, stream URL, or -- with ``device=True`` -- an avfoundation audio\n        device name or index such as ``\"Background Music\"``.\n    device: treat ``url`` as an ``avfoundation`` capture device (macOS).\n    realtime: throttle file playback to wall-clock speed (``-re``). Ignored for\n        devices and live network streams, which are inherently realtime.\n    extra_args: raw ffmpeg arguments inserted before the input, for anything this\n        wrapper does not expose."
+    },
+    {
+      "impl": "fused_llm",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "corrected": "TextFrame",
+        "translated": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "mlx-community/Qwen3.5-4B-4bit",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 320,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "min_similarity",
+          "default": 0.4,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "handle_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\ntarget: language code for the translation half.\nmax_tokens: caps the combined output. Both fields together are roughly twice one\n    line, so this is the single biggest lever on this stage's latency.\nmin_similarity: reject a \"correction\" that shares too few words with the input;\n    the original English is kept instead. See ``correct.mlx_llm`` for why.\nhandle_partials: leave False -- partials pass through untouched."
+    },
+    {
+      "impl": "fused_ollama",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "corrected": "TextFrame",
+        "translated": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "qwen3.5:4b",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "host",
+          "default": "http://localhost:11434",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 220,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "timeout",
+          "default": 8.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "think",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "min_similarity",
+          "default": 0.4,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "handle_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nmodel: name as ``ollama list`` shows it. Prefer a non-thinking instruct model --\n    reasoning tokens blow the latency budget (``think=False`` is passed anyway).\nhost: base URL of the Ollama server. Point it at another machine on the LAN to\n    keep the lecture audio on-device while borrowing its GPU.\ntarget: language code for the translation half.\nmax_tokens: caps the combined output -- corrected English plus translation, so\n    roughly twice one line and the single biggest lever on this stage's latency.\nmin_similarity: reject a \"correction\" sharing less than this fraction of words\n    with the original; the original English is kept instead. 0 disables the guard.\nhandle_partials: leave False -- partials pass through untouched.\ncontext_lines: inherited: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "highpass_gate",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "cutoff_hz",
+          "default": 80.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "order",
+          "default": 4,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "open_db",
+          "default": 9.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "close_db",
+          "default": 5.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "hold_ms",
+          "default": 220.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "floor_gain",
+          "default": 0.1,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "noise_adapt",
+          "default": 0.05,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "High-pass + noise gate.\n\nArgs:\n    cutoff_hz: high-pass corner. 80 Hz sits below the lowest male fundamental\n        (~85 Hz) and well above nothing useful.\n    order: filter order; 4 gives ~24 dB/octave.\n    open_db: level above the running noise floor at which the gate opens.\n    close_db: level at which it closes again -- lower than ``open_db`` on purpose.\n    hold_ms: how long the gate stays open after the signal drops, so word tails and\n        short pauses inside a sentence survive.\n    floor_gain: attenuation applied when closed. Not zero: digital silence sounds\n        unnatural to a Whisper model trained on real recordings, and total gaps can\n        make it hallucinate. -20 dB is enough."
+    },
+    {
+      "impl": "jsonl",
+      "inputs": {
+        "text": "TextFrame"
+      },
+      "outputs": {},
+      "options": [
+        {
+          "name": "path",
+          "default": null,
+          "required": false,
+          "annotation": "str | Path | None"
+        },
+        {
+          "name": "flush_every",
+          "default": 1,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "stream",
+          "default": null,
+          "required": false,
+          "annotation": "TextIO | None"
+        }
+      ],
+      "description": "Args:\npath: file to append to; omit to write to stdout.\nflush_every: fsync-free flush cadence. 1 (the default) means a crash still leaves\n    a complete log, which matters when the thing you are debugging is a hang."
+    },
+    {
+      "impl": "media",
+      "inputs": {},
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "url",
+          "default": null,
+          "required": true,
+          "annotation": "str"
+        },
+        {
+          "name": "start_seconds",
+          "default": 0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "lookahead_seconds",
+          "default": 0.5,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "A single-use media decoder driven by absolute media playback seconds.\n\nCall ``advance()`` on the event-loop thread to enable decoding. Only complete\ncanonical frames ending at or before playback + lookahead are admitted.\n``position`` is the end of emitted audio, including a padded final frame.\nSee ``docs/media-transport.md`` for clock conversion and lifecycle details."
+    },
+    {
+      "impl": "mic",
+      "inputs": {},
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "device",
+          "default": null,
+          "required": false,
+          "annotation": "str | int | None"
+        },
+        {
+          "name": "samplerate",
+          "default": null,
+          "required": false,
+          "annotation": "int | None"
+        },
+        {
+          "name": "block_ms",
+          "default": 20,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "channels",
+          "default": 1,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "max_queue",
+          "default": 256,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Live capture from an input device.\n\nArgs:\n    device: device name substring or PortAudio index; ``None`` uses the system\n        default. On macOS, ``\"Background Music\"`` (or BlackHole) is a virtual device\n        that carries *system output* -- that is how a video call or a playing video\n        gets captured rather than the room.\n    samplerate: device rate to request. ``None`` asks the device for its own default\n        (48 kHz on Apple hardware) and resamples to 16 kHz here.\n    block_ms: PortAudio buffer period. Smaller means lower capture latency and more\n        callbacks; 20 ms matches our frame size exactly.\n    max_queue: bounded backlog, in frames, between the audio thread and asyncio. If\n        the consumer stalls, old audio is dropped rather than allowed to grow."
+    },
+    {
+      "impl": "mlx_llm_corrector",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "mlx-community/Qwen3.5-4B-4bit",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 160,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "min_similarity",
+          "default": 0.4,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "correct_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nmodel: mlx-community repo id. Thinking is disabled by the shared engine because\n    reasoning tokens cannot meet the live latency budget.\nmax_tokens: hard cap on generation. Correction output is about as long as the\n    input, so this bounds worst-case latency.\nmin_similarity: reject a correction sharing less than this fraction of words with\n    the original. 0 disables the guard.\ncorrect_partials: leave False; see the module docstring.\ncontext_lines: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "mlx_llm_translator",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame",
+        "corrected": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "mlx-community/Qwen3.5-4B-4bit",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 220,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "repair_mode",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "translate_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\ntarget: language code (``vi``, ``zh``, ...). Two translator nodes on the same\n    topic give two languages from one correction pass.\nrepair_mode: repair ASR errors while translating and also emit the repaired\n    English on the ``corrected`` port. Set this when the node is wired straight\n    to raw ASR output with no corrector in the graph.\ntranslate_partials: leave False -- translating a half sentence produces a half\n    translation that is replaced a moment later, churn on screen for no\n    information gain.\ncontext_lines: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "mlx_whisper",
+      "inputs": {
+        "audio": "Utterance"
+      },
+      "outputs": {
+        "text": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "mlx-community/whisper-small.en-mlx",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "language",
+          "default": "en",
+          "required": false,
+          "annotation": "str | None"
+        },
+        {
+          "name": "temperature",
+          "default": 0.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "min_utterance_ms",
+          "default": 300.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "condition_on_previous_text",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "segmenter",
+          "default": "energy",
+          "required": false,
+          "annotation": "str"
+        }
+      ],
+      "description": "Args:\nmodel: an mlx-community Whisper repo id or a local path.\nlanguage: forced decode language. ``.en`` models are English-only anyway; setting\n    it explicitly on multilingual models stops Whisper from language-hopping on a\n    noisy segment.\ntemperature: 0 is greedy. Whisper's fallback ladder retries at higher\n    temperatures when a decode looks bad, which is slower and, for live use,\n    usually not worth the latency spike.\nmin_utterance_ms: below this, do not call the model at all.\nsegmenter: only used by the offline ``transcribe_array`` path (the graph puts a\n    segmenter node upstream). ``energy`` (default, no extra dependency) or\n    ``silero``."
+    },
+    {
+      "impl": "mock_transcriber",
+      "inputs": {
+        "audio": "Utterance"
+      },
+      "outputs": {
+        "text": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "script",
+          "default": null,
+          "required": false,
+          "annotation": "str | Path | None"
+        },
+        {
+          "name": "delay_ms",
+          "default": 120.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "loop",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        }
+      ],
+      "description": "Args:\nscript: path to a text file, one line per utterance. Defaults to the built-in\n    script above.\ndelay_ms: pretend inference time, so latency accounting is exercised.\nloop: restart the script when it runs out, for long soak runs."
+    },
+    {
+      "impl": "mock_translator",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame",
+        "corrected": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "delay_ms",
+          "default": 60.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "repair_mode",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "translate_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\ndelay_ms: simulated model latency, so latency plumbing is exercised.\nrepair_mode: also emit a repaired English frame on the ``corrected`` port,\n    mirroring the real translators, so the two-topic routing is covered by tests."
+    },
+    {
+      "impl": "noisereduce",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "stationary",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "prop_decrease",
+          "default": 0.8,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "chunk_ms",
+          "default": 480,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nstationary: assume a fixed noise profile (fan, hum) rather than tracking it.\n    Non-stationary mode adapts to babble but costs noticeably more CPU.\nprop_decrease: fraction of the estimated noise to remove, 0..1.\nchunk_ms: streaming buffer size. This lands directly in the latency budget."
+    },
+    {
+      "impl": "ollama_corrector",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "qwen3.5:4b",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "host",
+          "default": "http://localhost:11434",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 160,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "timeout",
+          "default": 8.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "think",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "min_similarity",
+          "default": 0.4,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "correct_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nmodel: model name as ``ollama list`` shows it. Prefer a non-thinking instruct\n    model -- reasoning tokens blow the latency budget (``think=False`` is passed\n    regardless, but a small non-thinking model is the better choice anyway).\nhost: base URL of the Ollama server.\nmax_tokens: hard cap on generation. Correction output is about as long as the\n    input, so this bounds worst-case latency.\nmin_similarity: reject a correction sharing less than this fraction of words with\n    the original. 0 disables the guard.\ncorrect_partials: leave False; see the module docstring.\ncontext_lines: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "ollama_translator",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "model",
+          "default": "qwen3.5:4b",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "host",
+          "default": "http://localhost:11434",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "target",
+          "default": "vi",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "max_tokens",
+          "default": 220,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "timeout",
+          "default": 8.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "think",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "translate_partials",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "context_lines",
+          "default": 2,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Args:\nmodel: name as ``ollama list`` shows it. Must exist on the server (`ollama pull`\n    first); verified once at start, not per call.\nhost: base URL of the Ollama server. Point it at another machine on the LAN to\n    keep the lecture audio on-device while borrowing its GPU.\ntarget: language code (``vi``, ``zh``, ...). Two translator nodes on the same\n    topic give two languages from one correction pass.\nmax_tokens: hard cap on generation -- output tokens are the latency.\ntimeout: per-call HTTP timeout. A late subtitle is worthless; on timeout the\n    caller keeps the previous text.\nthink: leave False; a reasoning model cannot meet the latency budget.\ntranslate_partials: leave False; translating half a sentence produces churn on\n    screen for no information gain.\ncontext_lines: how many finalised lines of discourse to give the model."
+    },
+    {
+      "impl": "passthrough_corrector",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [],
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+    },
+    {
+      "impl": "passthrough_denoiser",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [],
+      "description": "Returns the frame unchanged. Zero added latency."
+    },
+    {
+      "impl": "rules",
+      "inputs": {
+        "text_in": "TextFrame"
+      },
+      "outputs": {
+        "text_out": "TextFrame"
+      },
+      "options": [
+        {
+          "name": "glossary",
+          "default": null,
+          "required": false,
+          "annotation": "str | Path | None"
+        },
+        {
+          "name": "only",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "capitalise",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        }
+      ],
+      "description": "Args:\nglossary: path to a JSON object of ``{\"wrong\": \"right\"}`` pairs, merged over the\n    built-in defaults.\nonly: use *only* the file's rules, ignoring the defaults.\ncapitalise: capitalise the first letter and ensure terminal punctuation, which is\n    most of what makes a raw ASR line look unfinished on screen."
+    },
+    {
+      "impl": "silero",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "utterance": "Utterance"
+      },
+      "options": [
+        {
+          "name": "silence_ms",
+          "default": 220.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "min_speech_ms",
+          "default": 400.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "max_utterance_ms",
+          "default": 6000.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "pre_roll_ms",
+          "default": 250.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "flush_search_ms",
+          "default": 700.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "partial_every_ms",
+          "default": 900.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "partial_min_ms",
+          "default": 700.0,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "threshold",
+          "default": 0.5,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "onnx",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        }
+      ],
+      "description": "Pipeline node wrapping the Silero VAD segmenter.\n\nDeclares the port shape that makes segmentation a first-class graph stage:\naudio frames in, utterances out. ``process`` returns a list because one frame\ncan complete zero or more utterances; ``drain`` flushes the utterance still\nbeing accumulated when the audio ends."
+    },
+    {
+      "impl": "spectral",
+      "inputs": {
+        "audio": "AudioFrame"
+      },
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "over_subtraction",
+          "default": 1.5,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "floor_gain",
+          "default": 0.1,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "smoothing",
+          "default": 0.6,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "init_frames",
+          "default": 10,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "adapt_up",
+          "default": 0.995,
+          "required": false,
+          "annotation": "float"
+        },
+        {
+          "name": "adapt_down",
+          "default": 0.5,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "Per-bin spectral gate with an adaptive noise estimate.\n\nArgs:\n    over_subtraction: how many times the estimated noise magnitude to remove. Above\n        ~2.0 the residual \"musical noise\" (isolated surviving bins warbling between\n        frames) becomes worse for the ASR than the noise it replaced.\n    floor_gain: minimum gain per bin. Gating fully to zero is what creates musical\n        noise; leaving a -20 dB floor keeps the residual sounding like quiet room\n        tone, which Whisper handles far better than silence punctuated by artefacts.\n    smoothing: temporal smoothing of the gain mask between frames (0 = none).\n    init_frames: frames at startup assumed to be noise, used to seed the estimate.\n        The first fifth of a second of a lecture is almost always room tone."
+    },
+    {
+      "impl": "stdin",
+      "inputs": {},
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [],
+      "description": "16 kHz mono float32 PCM on standard input."
+    },
+    {
+      "impl": "stdout_pretty",
+      "inputs": {
+        "text": "TextFrame"
+      },
+      "outputs": {},
+      "options": [
+        {
+          "name": "show_latency",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "keep",
+          "default": 6,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "colour",
+          "default": null,
+          "required": false,
+          "annotation": "bool | None"
+        },
+        {
+          "name": "stream",
+          "default": null,
+          "required": false,
+          "annotation": "TextIO | None"
+        }
+      ],
+      "description": "Args:\nshow_latency: print each block's end-of-speech-to-display delay. On by default\n    because the spec asks for the delay to be demonstrated live.\nkeep: how many recent blocks stay repaintable. Older blocks scroll away and\n    become immutable history.\ncolour: disable for a plain log or a non-tty."
+    },
+    {
+      "impl": "wav",
+      "inputs": {},
+      "outputs": {
+        "audio": "AudioFrame"
+      },
+      "options": [
+        {
+          "name": "path",
+          "default": null,
+          "required": false,
+          "annotation": "str | Path | None"
+        },
+        {
+          "name": "realtime",
+          "default": true,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "loop",
+          "default": false,
+          "required": false,
+          "annotation": "bool"
+        },
+        {
+          "name": "pad_tail_ms",
+          "default": 600,
+          "required": false,
+          "annotation": "int"
+        }
+      ],
+      "description": "Stream a file from disk as canonical frames.\n\nArgs:\n    path: any libsndfile-readable audio file. (For video containers or exotic\n        codecs, use the ffmpeg source instead.)\n    realtime: pace output at wall-clock speed.\n    loop: restart at the end, for long soak tests.\n    pad_tail_ms: trailing silence appended once the file ends, so the segmenter sees\n        an end-of-speech boundary and flushes the final utterance instead of leaving\n        it unterminated."
+    },
+    {
+      "impl": "websocket_server",
+      "inputs": {
+        "text": "TextFrame"
+      },
+      "outputs": {},
+      "options": [
+        {
+          "name": "host",
+          "default": "127.0.0.1",
+          "required": false,
+          "annotation": "str"
+        },
+        {
+          "name": "port",
+          "default": 8765,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "replay",
+          "default": 20,
+          "required": false,
+          "annotation": "int"
+        },
+        {
+          "name": "send_timeout",
+          "default": 1.0,
+          "required": false,
+          "annotation": "float"
+        }
+      ],
+      "description": "Args:\nhost/port: bind address. Defaults to localhost only -- a lecture transcript is\n    not something to expose on a classroom network by accident.\nreplay: events buffered for clients that connect late.\nsend_timeout: a client that cannot accept a message within this window is\n    disconnected."
+    }
+  ],
+  "configs": {
+    "fused.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "nr",
+          "impl": "spectral",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "audio": "audio.clean"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.clean"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "mlx_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "mlx-community/whisper-small.en-mlx"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix_translate",
+          "impl": "fused_llm",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "corrected": "text.corrected",
+            "translated": "text.out"
+          },
+          "options": {
+            "target": "vi",
+            "model": "mlx-community/Qwen3.5-4B-4bit"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "with_denoise.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "nr",
+          "impl": "spectral",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "audio": "audio.clean"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.clean"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "faster_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "small.en"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix_translate",
+          "impl": "fused_ollama",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "corrected": "text.corrected",
+            "translated": "text.out"
+          },
+          "options": {
+            "target": "vi"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "video.toml": {
+      "nodes": [
+        {
+          "name": "src",
+          "impl": "ffmpeg",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {
+            "url": "assets/lecture.wav",
+            "realtime": true
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "faster_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "small.en"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix_translate",
+          "impl": "fused_ollama",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "corrected": "text.corrected",
+            "translated": "text.out"
+          },
+          "options": {
+            "target": "vi"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "mlx.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {
+            "device": "default"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "mlx_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "mlx-community/whisper-small.en-mlx"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix",
+          "impl": "mlx_llm_corrector",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "text_out": "text.corrected"
+          },
+          "options": {
+            "model": "mlx-community/Qwen3.5-4B-4bit"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vi",
+          "impl": "mlx_llm_translator",
+          "inputs": {
+            "text_in": "text.corrected"
+          },
+          "outputs": {
+            "text_out": "text.out"
+          },
+          "options": {
+            "target": "vi",
+            "model": "mlx-community/Qwen3.5-4B-4bit"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "show_latency": true
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "log",
+          "impl": "jsonl",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "path": "logs/session.jsonl"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "ws",
+          "impl": "websocket_server",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "port": 8765
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "default.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {
+            "device": "default"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "faster_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "small.en"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix_translate",
+          "impl": "fused_ollama",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "corrected": "text.corrected",
+            "translated": "text.out"
+          },
+          "options": {
+            "target": "vi",
+            "model": "qwen3.5:4b"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "show_latency": true
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "log",
+          "impl": "jsonl",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "path": "logs/session.jsonl"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "ws",
+          "impl": "websocket_server",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {
+            "port": 8765
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "bilingual.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "faster_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "small.en"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix",
+          "impl": "ollama_corrector",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "text_out": "text.corrected"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vi",
+          "impl": "ollama_translator",
+          "inputs": {
+            "text_in": "text.corrected"
+          },
+          "outputs": {
+            "text_out": "text.vi"
+          },
+          "options": {
+            "target": "vi"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "zh",
+          "impl": "ollama_translator",
+          "inputs": {
+            "text_in": "text.corrected"
+          },
+          "outputs": {
+            "text_out": "text.zh"
+          },
+          "options": {
+            "target": "zh"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.vi",
+            "text_3": "text.zh"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.raw",
+          "text.vi",
+          "text.zh"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "mock.toml": {
+      "nodes": [
+        {
+          "name": "src",
+          "impl": "wav",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {
+            "path": "assets/lecture.wav",
+            "realtime": true
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "mock_transcriber",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "fix",
+          "impl": "rules",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "text_out": "text.corrected"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vi",
+          "impl": "mock_translator",
+          "inputs": {
+            "text_in": "text.corrected"
+          },
+          "outputs": {
+            "text_out": "text.out"
+          },
+          "options": {
+            "target": "vi"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.corrected",
+            "text_2": "text.out"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.corrected",
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    },
+    "no_correct.toml": {
+      "nodes": [
+        {
+          "name": "mic",
+          "impl": "mic",
+          "inputs": {},
+          "outputs": {
+            "audio": "audio.raw"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "nr",
+          "impl": "spectral",
+          "inputs": {
+            "audio": "audio.raw"
+          },
+          "outputs": {
+            "audio": "audio.clean"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vad",
+          "impl": "energy",
+          "inputs": {
+            "audio": "audio.clean"
+          },
+          "outputs": {
+            "utterance": "utterance.speech"
+          },
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "asr",
+          "impl": "faster_whisper",
+          "inputs": {
+            "audio": "utterance.speech"
+          },
+          "outputs": {
+            "text": "text.raw"
+          },
+          "options": {
+            "model": "small.en"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "vi",
+          "impl": "ollama_translator",
+          "inputs": {
+            "text_in": "text.raw"
+          },
+          "outputs": {
+            "text_out": "text.out"
+          },
+          "options": {
+            "target": "vi",
+            "model": "qwen3.5:4b"
+          },
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        },
+        {
+          "name": "screen",
+          "impl": "stdout_pretty",
+          "inputs": {
+            "text": "text.raw",
+            "text_1": "text.out"
+          },
+          "outputs": {},
+          "options": {},
+          "mode": "default",
+          "skip_if_finalized": null,
+          "enabled": true
+        }
+      ],
+      "settings": {
+        "settings": {
+          "target": "vi"
+        }
+      },
+      "editor": {
+        "subtitle_topics": [
+          "text.out",
+          "text.raw"
+        ],
+        "positions": {},
+        "overlays": {},
+        "auto_pause": {}
+      }
+    }
+  }
+}

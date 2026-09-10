@@ -1,0 +1,12 @@
+{
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "dev": "deno run -A npm:vite --host 127.0.0.1",
+    "check": "deno run -A npm:typescript/tsc --noEmit",
+    "build": "deno task check && deno run -A npm:vite build",
+    "preview": "deno run -A npm:vite preview --host 127.0.0.1",
+    "test": "deno test --allow-read tests/",
+    "fmt": "deno fmt src tests deno.json package.json tsconfig.json vite.config.ts"
+  },
+  "fmt": { "lineWidth": 100, "singleQuote": true }
+}

@@ -22,6 +22,7 @@ Names that would collide across the old kinds are disambiguated with a suffix
 from __future__ import annotations
 
 import importlib
+import inspect
 from typing import Any
 
 #: impl name -> "module.path:ClassName"
@@ -79,7 +80,7 @@ _INSTALL_HINTS = {
     "cloud_llm_corrector": "requirements-cloud.txt",
     "cloud_llm_translator": "requirements-cloud.txt",
     "deepfilternet": "requirements-extra.txt (pip install deepfilternet)",
-    "silero": "pip install silero-vad onnxruntime",
+    "silero": "requirements-mlx.txt",
 }
 
 
@@ -93,6 +94,26 @@ class MissingDependency(RuntimeError):
 
 def available() -> list[str]:
     return sorted(REGISTRY)
+
+
+def option_parameters(cls: type) -> dict[str, inspect.Parameter]:
+    """Public keyword options, including explicitly declared forwarded options.
+
+    Configuration objects themselves are implementation details: when their type
+    is also an option source, expose their fields instead of the wrapper argument.
+    Explicit constructor parameters take precedence over forwarded defaults.
+    """
+    sources = getattr(cls, 'option_sources', ())
+    result = {}
+    for source in (*sources, cls):
+        for name, param in inspect.signature(source).parameters.items():
+            if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
+                continue
+            annotation = str(param.annotation)
+            if any(t.__name__ in annotation for t in sources):
+                continue
+            result[name] = param
+    return result
 
 
 def resolve(impl: str) -> type:

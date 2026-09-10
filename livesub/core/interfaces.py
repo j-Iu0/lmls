@@ -55,6 +55,10 @@ class Module(ABC):
     #: the default; unconnected default ports intentionally publish nothing.
     default_output: ClassVar[str | None] = None
 
+    #: Constructor/config classes whose keyword arguments this wrapper forwards.
+    #: Registry introspection uses these for CLI, documentation and API tooling.
+    option_sources: ClassVar[tuple[type, ...]] = ()
+
     def __init__(self) -> None:
         # ``name`` is set by the registry after construction; initialised here as an
         # instance variable so subclasses that call super().__init__() see a real

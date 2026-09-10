@@ -107,6 +107,7 @@ class EnergySegmenter(Module):
 
     inputs: ClassVar[dict[str, type]] = {"audio": AudioFrame}
     outputs: ClassVar[dict[str, type]] = {"utterance": Utterance}
+    option_sources = (SegmenterConfig, _EnergySegmenterImpl)
 
     def __init__(self, **kwargs: Any):
         super().__init__()

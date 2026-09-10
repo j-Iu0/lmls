@@ -11,7 +11,7 @@ from typing import Any
 
 from ..core.config import ConfigError, GraphConfig, config_from_dict, config_to_dict
 from ..core.graph import validate
-from ..core.registry import available, resolve
+from ..core.registry import available, resolve, option_parameters
 from ..core.types import TextFrame
 
 
@@ -24,9 +24,7 @@ def catalog() -> list[dict[str, Any]]:
             item.update(description=inspect.getdoc(cls) or "",
                         inputs={p: t.__name__ for p, t in cls.inputs.items()},
                         outputs={p: t.__name__ for p, t in cls.outputs.items()})
-            for name, param in inspect.signature(cls.__init__).parameters.items():
-                if name == "self" or param.kind in (param.VAR_KEYWORD, param.VAR_POSITIONAL):
-                    continue
+            for name, param in option_parameters(cls).items():
                 default = None if param.default is inspect.Parameter.empty else param.default
                 try:
                     json.dumps(default)
