@@ -247,3 +247,20 @@ async def test_optional_translator_socket_does_not_steal_default_output(client):
             await asyncio.sleep(.05)
     assert not any(s['topic'] == 'a.optional' for s in session.subtitles.values())
     await ws.close()
+
+
+async def test_serves_built_studio_assets_and_reports_missing_build(client, tmp_path, monkeypatch):
+    from livesub.web import server
+    monkeypatch.setattr(server, 'STUDIO', tmp_path)
+    missing = await client.get('/')
+    assert missing.status == 503
+    assert 'deno task build' in await missing.text()
+    (tmp_path / 'assets').mkdir()
+    (tmp_path / 'index.html').write_text('<main>studio</main>')
+    (tmp_path / 'assets' / 'editor.js').write_text('export const studio = true;')
+    page = await client.get('/')
+    assert page.status == 200 and '<main>studio</main>' in await page.text()
+    asset = await client.get('/assets/editor.js')
+    assert asset.status == 200 and 'studio' in await asset.text()
+    assert (await client.get('/assets/missing.js')).status == 404
+    assert (await client.get('/assets/editor.py')).status == 404

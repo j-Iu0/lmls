@@ -1,5 +1,11 @@
 # Livesub Studio
 
+The current React node editor is documented in [studio/README.md](../studio/README.md).
+Build it with `cd studio && deno install && deno task build` before starting Python.
+The older interface walkthrough below is retained for historical context; the API
+and runtime semantics remain shared. See [integration notes](studio-integration.md)
+for the new frontend and the small, general Python metadata additions.
+
 Livesub Studio runs next to the Python pipeline on your computer. It uses your
 existing module registry and configurations; no cloud deployment or model server
 is required for the included mock pipeline.
@@ -24,7 +30,9 @@ on the Python host, with its normal OS microphone permission, not in the browser
 ## Graph editing
 
 Click a module in the searchable library, or drag it onto the canvas. Drag nodes
-by their headers; drag the canvas to pan and scroll to zoom. Connect matching
+by their headers. Two-finger scrolling pans the canvas, and a trackpad pinch
+zooms around the pointer. Middle-drag and Space-drag also pan; Command/Control
+plus scrolling also zooms. Connect matching
 colored sockets by clicking an output and then an input, or dragging between them.
 Connections follow declared Python payload types, not node or topic names. One
 output can feed many nodes; a module with one input port supports multiple topics.

@@ -18,6 +18,7 @@ from .session import ACTIVE, Session, SessionConflict
 
 MEDIA_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi', '.wav', '.mp3', '.m4a', '.aac', '.ogg', '.flac', '.opus'}
 STATIC = Path(__file__).with_name('static')
+STUDIO = Path(__file__).with_name('studio')
 MAX_UPLOAD = 2 * 1024 ** 3
 SESSION = web.AppKey('session', Session)
 CLIENTS = web.AppKey('clients', set)
@@ -180,7 +181,18 @@ def create_app(config_path: Path | None = None, media_root: Path | None = None) 
         return ws
 
     async def index(request):
-        return web.FileResponse(STATIC / 'index.html')
+        if not (STUDIO / 'index.html').is_file():
+            return web.Response(status=503, text='Build the editor first: cd studio && deno task build')
+        return web.FileResponse(STUDIO / 'index.html')
+
+    async def studio_asset(request):
+        name = request.match_info['name']
+        if Path(name).name != name or Path(name).suffix not in {'.js', '.css', '.svg', '.woff2'}:
+            raise web.HTTPNotFound()
+        path = STUDIO / 'assets' / name
+        if not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path)
 
     async def asset(request):
         name = request.match_info['name']
@@ -246,6 +258,7 @@ def create_app(config_path: Path | None = None, media_root: Path | None = None) 
         web.post('/api/validate', validate_config), web.post('/api/run', run), web.post('/api/stop', stop),
         web.post('/api/seek', seek), web.post('/api/playback', playback), web.get('/api/media', media),
         web.post('/api/upload', upload), web.get('/api/events', events),
+        web.get('/assets/{name}', studio_asset),
         web.get('/static/{name}', asset), web.get('/{name}', asset),
     ])
     return app

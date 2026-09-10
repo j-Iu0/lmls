@@ -31,15 +31,16 @@ _WINDOW = 512  # required by the model at 16 kHz
 class _SileroSegmenterImpl(Segmenter):
     """Args:
         threshold: speech probability above which a window counts as speech.
-        onnx: use the ONNX runtime rather than torch. Much lighter to install; prefer it
-            unless torch is already present for another reason.
+        onnx: use the ONNX runtime rather than torch. PyTorch is the default because it
+            is installed by ``requirements-mlx.txt``; set this only when onnxruntime is
+            installed explicitly.
     """
 
     def __init__(
         self,
         config: SegmenterConfig | None = None,
         threshold: float = 0.5,
-        onnx: bool = True,
+        onnx: bool = False,
         **_: Any,
     ):
         super().__init__(config)
@@ -47,12 +48,20 @@ class _SileroSegmenterImpl(Segmenter):
             from silero_vad import load_silero_vad  # type: ignore
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise ImportError(
-                "silero-vad is not installed. `pip install silero-vad onnxruntime`, "
-                "or use the default 'energy' segmenter."
+                "silero-vad is not installed. Install requirements-mlx.txt, or use "
+                "the default 'energy' segmenter."
             ) from exc
 
         self.threshold = threshold
-        self._model = load_silero_vad(onnx=onnx)
+        try:
+            self._model = load_silero_vad(onnx=onnx)
+        except ModuleNotFoundError as exc:
+            if onnx and exc.name == "onnxruntime":
+                raise ImportError(
+                    "Silero is configured with onnx=true, but onnxruntime is not "
+                    "installed. Set onnx=false to use PyTorch, or install onnxruntime."
+                ) from exc
+            raise
         self._onnx = onnx
         self._pending = np.zeros(0, dtype=np.float32)
         self._last = False
@@ -94,6 +103,7 @@ class SileroSegmenter(Module):
 
     inputs: ClassVar[dict[str, type]] = {"audio": AudioFrame}
     outputs: ClassVar[dict[str, type]] = {"utterance": Utterance}
+    option_sources = (SegmenterConfig, _SileroSegmenterImpl)
 
     def __init__(self, **kwargs: Any):
         super().__init__()

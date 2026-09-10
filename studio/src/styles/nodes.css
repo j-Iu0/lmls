@@ -1,0 +1,439 @@
+.pipeline-node {
+  width: 250px;
+  background: #282b30;
+  border: 1px solid #45494f;
+  border-radius: 11px;
+  box-shadow: 0 4px 12px #0002;
+  position: relative;
+}
+.pipeline-node.selected {
+  border-color: var(--node-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color), transparent 89%), 0 8px 24px #0003;
+}
+.pipeline-node::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--node-color);
+  opacity: .65;
+}
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 17px 15px 15px;
+  cursor: grab;
+}
+.node-header:active {
+  cursor: grabbing;
+}
+.node-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color), transparent 92%);
+  border: 1px solid color-mix(in srgb, var(--node-color), transparent 86%);
+  border-radius: 8px;
+}
+.node-header h2 {
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -.15px;
+}
+.implementation {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  display: block;
+  font-size: 10px;
+  color: #89929e;
+  margin-top: 1px;
+}
+.node-actions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.pipeline-node:hover .node-actions,
+.pipeline-node:focus-within .node-actions,
+.pipeline-node.selected .node-actions {
+  opacity: 1;
+}
+.node-actions .icon-button {
+  width: 20px;
+  height: 26px;
+}
+.node-body {
+  padding: 0 16px 8px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 15px;
+  gap: 8px;
+  font-size: 12px;
+  color: #b4bbc4;
+}
+.field > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.field output {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  background: #1e2126;
+  padding: 4px 6px;
+  border: 1px solid #363b42;
+  border-radius: 4px;
+  color: #d3d7dc;
+}
+.field output small {
+  color: #929ba6;
+  font-size: 10px;
+}
+.field select,
+.field input:not([type=range]):not([type=checkbox]) {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #434850;
+  background: #22252a;
+  border-radius: 5px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: #d8dce1;
+}
+.field select:disabled {
+  color: #a1a7b0;
+  background: #25282d;
+  opacity: .7;
+}
+.field input[type=range] {
+  margin: 0;
+  height: 12px;
+}
+.field-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.field input[role=switch] {
+  appearance: none;
+  width: 27px;
+  height: 15px;
+  background: #4e535a;
+  border-radius: 10px;
+  position: relative;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.field input[role=switch]::after {
+  content: '';
+  width: 11px;
+  height: 11px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: #e2e7e9;
+  transition: left .12s;
+}
+.field input[role=switch]:checked {
+  background: #758854;
+}
+.field input[role=switch]:checked::after {
+  left: 14px;
+}
+.field input[role=switch]:disabled {
+  opacity: .55;
+}
+.advanced-button {
+  color: #858f9a;
+  font-size: 10px;
+  height: 23px;
+  padding: 0;
+  gap: 5px;
+  margin-top: -1px;
+}
+.advanced-button svg:first-child {
+  transform: rotate(-90deg);
+}
+.advanced-button.expanded svg:first-child {
+  transform: rotate(0);
+}
+.advanced-button svg:last-child:not(:first-child) {
+  margin-left: 6px;
+}
+.advanced-fields {
+  padding-top: 13px;
+}
+.node-ports {
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 17px;
+  border-top: 1px solid #3a3f45;
+  background: #25282d;
+  border-radius: 0 0 11px 11px;
+  font-size: 10px;
+  color: #a1a9b2;
+}
+.port {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.node-ports .react-flow__handle {
+  /* React Flow anchors wires to this box. Keep it the size of the visible socket. */
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+.node-ports .react-flow__handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--port-hit-size, 32px);
+  height: var(--port-hit-size, 32px);
+  border-radius: 50%;
+  /* The enlarged hit area doesn't change the wire anchor or intercept locked ports. */
+  pointer-events: inherit;
+}
+.node-ports .react-flow__handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border: 2px solid #23262a;
+  border-radius: 50%;
+  outline: 1px solid #59636f;
+  background: var(--port-color);
+  pointer-events: none;
+}
+.node-ports .react-flow__handle:hover::after,
+.node-ports .react-flow__handle.connectingfrom::after,
+.node-ports .react-flow__handle.valid::after {
+  outline: 2px solid var(--port-color);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--port-color), transparent 85%);
+}
+.node-ports .react-flow__handle-left {
+  left: -18px;
+}
+.node-ports .react-flow__handle-right {
+  right: -18px;
+}
+.node-stats {
+  padding: 10px 15px 11px;
+  border-top: 1px solid #3a3f45;
+  border-radius: 0 0 11px 11px;
+}
+.stat-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #8c98a3;
+}
+.stat-line > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.stat-line strong {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  color: #bfc6ce;
+  font-size: 11px;
+  font-weight: 450;
+}
+.stat-line small {
+  font-size: 9px;
+  color: #8c98a3;
+}
+.status-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: #78808a;
+  border-radius: 50%;
+}
+.status-dot.active {
+  background: #b8dc8d;
+  box-shadow: 0 0 6px #b8dc8d33;
+}
+.pressure .status-dot {
+  background: #edb379;
+}
+.pressure .stat-line > span {
+  color: #edb379;
+}
+
+.stat-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #838e9a;
+}
+.stat-detail b {
+  font-weight: 450;
+  color: #b9c0c9;
+  margin-left: 3px;
+}
+.node-menu {
+  position: absolute;
+  right: 11px;
+  top: 50px;
+  width: 130px;
+  border: 1px solid #4b515a;
+  background: #31363c;
+  box-shadow: 0 6px 18px #0005;
+  border-radius: 7px;
+  z-index: 8;
+  padding: 4px;
+}
+.node-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px;
+  font-size: 11px;
+}
+.media-preview {
+  background: #1c2025;
+  border: 1px solid #383e45;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.preview-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 10px 0;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #a6a29a;
+}
+.sample-tag {
+  margin-left: auto;
+  font-size: 7px;
+  border: 1px solid #414244;
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+.waveform {
+  display: block;
+  width: calc(100% - 18px);
+  height: 64px;
+  margin: 4px 9px;
+  fill: #d8ae7e;
+}
+.waveform.playing {
+  animation: signal 2s ease-in-out infinite;
+}
+@keyframes signal {
+  50% {
+    opacity: .65;
+  }
+}
+.preview-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: #858e99;
+  padding: 0 10px 10px;
+}
+.filename {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0 0;
+  font-size: 11px;
+}
+.filename > span {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filename .icon-button {
+  height: 28px;
+  width: 25px;
+}
+.media-source .seek {
+  margin: 5px 0 0;
+  height: 12px;
+}
+.transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 7px;
+}
+.transport > div {
+  display: flex;
+  gap: 3px;
+}
+.transport .icon-button {
+  height: 28px;
+  width: 28px;
+}
+.transport .mono {
+  font-size: 10px;
+}
+.media-preview video {
+  display: block;
+  width: 100%;
+  height: 118px;
+  object-fit: contain;
+  background: #15181b;
+}
+.field-error {
+  font-size: 10px;
+  color: #e8af90;
+  line-height: 1.6;
+  margin: 6px 0;
+}
+.output-note {
+  color: #949e89;
+  font-size: 10px;
+  line-height: 1.5;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 15px 0 5px;
+}
+.tiny-dot {
+  display: inline-block;
+  border-radius: 50%;
+  width: 4px;
+  height: 4px;
+  background: #b7c98b;
+  flex-shrink: 0;
+}
+@media (hover:none) {
+  .node-actions {
+    opacity: 1;
+  }
+}
+.port-column {
+  display: flex;
+  flex-direction: column;
+  /* Separate enlarged hit areas on multi-output nodes even when zoomed out. */
+  gap: max(16px, calc(var(--port-hit-size, 32px) - 12px));
+}
+.port-column:last-child {
+  align-items: flex-end;
+}
+.structured-fields {
+  padding-left: 8px;
+  border-left: 1px solid #45494f;
+}
