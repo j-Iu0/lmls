@@ -5,6 +5,8 @@ decomposition: none of these needs another module present.
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -349,6 +351,36 @@ async def test_segmenter_module_drain_matches_inner_close():
     assert isinstance(drained, list)
     # drain() must fully flush the inner buffer: a second close finds nothing.
     assert list(node._inner.close()) == [], "drain must consume the pending utterance"
+
+
+def test_silero_defaults_to_the_torch_runtime(monkeypatch):
+    """The ML requirements already install torch, so the default must not need ONNX."""
+    from livesub.segment.silero import _SileroSegmenterImpl
+
+    requested: list[bool] = []
+    fake_model = object()
+    monkeypatch.setitem(sys.modules, "silero_vad", SimpleNamespace(
+        load_silero_vad=lambda *, onnx: requested.append(onnx) or fake_model,
+    ))
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace())
+
+    segmenter = _SileroSegmenterImpl()
+
+    assert requested == [False]
+    assert segmenter._model is fake_model
+    assert segmenter.describe()["runtime"] == "torch"
+
+
+def test_silero_explains_an_explicit_missing_onnx_runtime(monkeypatch):
+    from livesub.segment.silero import _SileroSegmenterImpl
+
+    def missing_onnx(*, onnx: bool):
+        assert onnx is True
+        raise ModuleNotFoundError("No module named 'onnxruntime'", name="onnxruntime")
+
+    monkeypatch.setitem(sys.modules, "silero_vad", SimpleNamespace(load_silero_vad=missing_onnx))
+    with pytest.raises(ImportError, match="Set onnx=false to use PyTorch"):
+        _SileroSegmenterImpl(onnx=True)
 
 
 # -- correction --------------------------------------------------------------

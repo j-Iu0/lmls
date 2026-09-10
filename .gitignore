@@ -7,3 +7,6 @@ logs/
 .DS_Store
 .mp3
 .assets
+studio/node_modules/
+studio/dist/
+livesub/web/studio/
