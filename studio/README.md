@@ -88,5 +88,5 @@ port routing, disconnection, generation-bounded telemetry and canvas gestures.
 Python tests cover API lifecycle, media ranges/upload, generation rejection,
 observation, forwarded option metadata, and production static serving.
 
-See [the architecture proposal](../docs/editor-next.md) and
-[backend integration notes](../docs/studio-integration.md).
+See [backend integration notes](../docs/studio-integration.md) and
+[the system architecture](../docs/architecture.md).
