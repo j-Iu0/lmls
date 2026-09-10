@@ -192,6 +192,35 @@ async def test_an_all_underscore_out_list_publishes_nothing():
     assert graph.metrics.counts.get("vi", 0) == 0  # translations were dropped
 
 
+async def test_a_bare_result_with_no_wired_output_publishes_nothing():
+    """A transcription stage whose output port is never wired (or skipped with "_")
+    must not fail the run: like a named result for an unwired port, its results are
+    discarded, and a one-time warning explains where the subtitles went."""
+    nodes = [
+        {"name": "src", "impl": "wav", "out": "audio.raw",
+         "path": WAV, "realtime": False},
+        {"name": "vad", "impl": "energy", "in": "audio.raw", "out": "utterance.speech"},
+        {"name": "asr", "impl": "mock_transcriber",
+         "in": "utterance.speech", "delay_ms": 0},  # no "out" wired at all
+    ]
+    cfg = cfg_from(nodes)
+    assert validate(cfg) == []
+    graph = Graph(cfg)
+    await graph.run(timeout=20)
+    assert graph.metrics.stage_counts.get("asr", 0) > 0  # it ran, and dropped
+    assert graph.metrics.counts.get("en", 0) == 0  # nothing was published
+    assert "text.raw" not in graph.bus.report()
+
+
+def test_a_source_with_no_wired_output_is_an_error():
+    """A source cannot skip its ports: it would decode audio for nobody and fail
+    later with an opaque IndexError instead of this one-line startup error."""
+    nodes = full_pipeline()
+    del nodes[0]["out"]
+    with pytest.raises(GraphError, match="wires none"):
+        validate(cfg_from(nodes))
+
+
 async def test_a_skipped_out_port_publishes_nothing():
     """repair_mode builds frames for both ports every call; the skipped port's
     frames are dropped before the bus sees them."""

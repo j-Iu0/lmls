@@ -73,6 +73,13 @@ def validate(cfg: GraphConfig) -> list[str]:
             raise GraphError(
                 f"node {n.name!r} ({cls.__name__}) declares no output ports"
             )
+        if cls.outputs and not n.inputs and not n.outputs:
+            # Unlike a transform, a source may not skip its ports: _run_source has
+            # nowhere to publish, so the whole stage would be dead weight.
+            raise GraphError(
+                f"node {n.name!r} ({cls.__name__}) declares output ports "
+                f"{sorted(cls.outputs)} but wires none"
+            )
 
     # A graph needs at least one node that produces without consuming.
     if not any(not cls.inputs for cls in classes.values()):
@@ -233,6 +240,7 @@ class Graph:
         self._states = {n.config.name: {"state": "pending", "message": ""}
                         for n in self.nodes}
         self._in_flight = {n.config.name: 0 for n in self.nodes}
+        self._no_output_warned: set[str] = set()
 
     def _emit(self, event: dict[str, Any]) -> None:
         """Synchronous, loop-thread notification; no event history is retained."""
@@ -599,6 +607,16 @@ class Graph:
                     topic = node.config.topic_for_port(default_port)
                 elif len(node.config.outputs) == 1:
                     topic = next(iter(node.config.outputs.values()))
+                elif not node.config.outputs:
+                    # Every output port was skipped or never wired: like a named
+                    # result for an unwired port, the frame is simply dropped.
+                    if node.config.name not in self._no_output_warned:
+                        self._no_output_warned.add(node.config.name)
+                        log.warning(
+                            "node %r: no output topic is wired; its results are discarded",
+                            node.config.name,
+                        )
+                    continue
                 else:
                     raise GraphError(f"{node.config.name}: multiple outputs require a named result or default_output")
 
