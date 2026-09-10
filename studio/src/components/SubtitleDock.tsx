@@ -36,20 +36,22 @@ export function SubtitleDock(
     [following, setFollowing] = useState(true);
   const feed = useRef<HTMLDivElement>(null);
   const rows = s.captions;
-  // Every text endpoint of the pipeline, labelled node.port because port names
-  // are scoped by module. Observed endpoints are merged in so a caption whose
-  // node has left the draft stays filterable.
-  const endpoints = new Map<string, string>();
+  // Every text endpoint of the pipeline, grouped by producing node. Port names
+  // are scoped by module, so labels pair each node with its ports. Observed
+  // endpoints are merged in so a caption whose node left the draft stays filterable.
+  const endpoints = new Map<string, string[]>();
+  const addEndpoint = (node: string, port: string) => {
+    const ports_ = endpoints.get(node) ?? [];
+    if (!ports_.includes(port)) endpoints.set(node, [...ports_, port]);
+  };
   for (const node of document.nodes) {
     if (node.enabled === false) continue;
     for (const [port, payload] of Object.entries(ports(node, 'source'))) {
-      if (payload === 'text') endpoints.set(`${node.name}:${port}`, `${node.name}.${port}`);
+      if (payload === 'text') addEndpoint(node.name, port);
     }
   }
   for (const row of rows) {
-    if (row.port && !endpoints.has(`${row.producer}:${row.port}`)) {
-      endpoints.set(`${row.producer}:${row.port}`, `${row.producer}.${row.port}`);
-    }
+    if (row.port) addEndpoint(row.producer, row.port);
   }
   const groups = new Map<string, Caption[]>();
   for (const row of rows.filter((row) => picked.includes(`${row.producer}:${row.port ?? ''}`))) {
@@ -159,19 +161,27 @@ export function SubtitleDock(
       </header>
       {filterOpen && (
         <div className='endpoint-picker'>
-          {[...endpoints.entries()].length
-            ? [...endpoints.entries()].map(([id, label]) => (
-              <label key={id}>
-                <input
-                  type='checkbox'
-                  checked={picked.includes(id)}
-                  onChange={(e) =>
-                    setPicked(
-                      e.target.checked ? [...picked, id] : picked.filter((s) => s !== id),
-                    )}
-                />
-                {label}
-              </label>
+          {endpoints.size
+            ? [...endpoints.entries()].map(([node, portNames]) => (
+              <div className='endpoint-group' key={node}>
+                <span className='endpoint-node'>{node}</span>
+                {portNames.map((port) => {
+                  const id = `${node}:${port}`;
+                  return (
+                    <label key={port}>
+                      <input
+                        type='checkbox'
+                        checked={picked.includes(id)}
+                        onChange={(e) =>
+                          setPicked(
+                            e.target.checked ? [...picked, id] : picked.filter((p) => p !== id),
+                          )}
+                      />
+                      {port}
+                    </label>
+                  );
+                })}
+              </div>
             ))
             : <span>Text endpoints appear once a pipeline is loaded.</span>}
         </div>
