@@ -1,4 +1,4 @@
-import { catalog } from './model.ts';
+import { catalog, ports } from './model.ts';
 import type { Document, Field, ModuleDefinition, PipelineNode, Value, Wire } from './model.ts';
 
 export interface BackendNode {
@@ -136,6 +136,35 @@ export function nodeFields(node: PipelineNode): Field[] {
   }
   return fields;
 }
+
+/** Published text endpoints, identified exactly like the subtitle dock's rows. */
+export function textEndpoints(doc: Document): {
+  node: string;
+  port: string;
+  id: string;
+  label: string;
+  topic: string;
+}[] {
+  const result: { node: string; port: string; id: string; label: string; topic: string }[] = [];
+  for (const n of doc.nodes) {
+    if (n.enabled === false) continue;
+    const payloads = catalog[n.kind].outputs ?? {};
+    const published = n.raw?.outputs
+      ? Object.entries(n.raw.outputs)
+      : Object.entries(ports(n, 'source'));
+    for (const [port, topic] of published) {
+      if (payloads[port] !== 'text') continue;
+      result.push({
+        node: n.name,
+        port,
+        id: `${n.name}:${port}`,
+        label: `${n.name} · ${port}`,
+        topic: String(topic),
+      });
+    }
+  }
+  return result;
+}
 export function fromBackend(config: BackendConfig): Document {
   const publishers = new Map<string, { node: string; port: string }[]>();
   for (const n of config.nodes) {
@@ -145,6 +174,8 @@ export function fromBackend(config: BackendConfig): Document {
   }
   const edges: Wire[] = [];
   const positions = config.editor.positions as Record<string, { x: number; y: number }> | undefined;
+  const overlays = (config.editor.overlays ?? {}) as Record<string, Value>;
+  const autoPause = (config.editor.auto_pause ?? {}) as Record<string, Value>;
   const nodes = config.nodes.map((n, index): PipelineNode => {
     if (!catalog[n.impl]) throw new Error(`Unknown implementation: ${n.impl}`);
     const unwiredInputs: Record<string, string> = {};
@@ -171,6 +202,8 @@ export function fromBackend(config: BackendConfig): Document {
       options: structuredClone(n.options),
       enabled: n.enabled,
       mode: n.mode,
+      overlay: String(overlays[n.name] ?? ''),
+      autoPause: Boolean(autoPause[n.name]),
       raw: structuredClone(n),
       unwiredInputs,
       position: saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
@@ -270,17 +303,19 @@ export function toBackend(doc: Document): BackendConfig {
       }
     }
   }
+  // Auto pause needs an attached text output; drop it when its overlay did not survive.
+  const overlays = Object.fromEntries(
+    doc.nodes
+      .map((n) => [n.name, n.overlay ?? ''] as const)
+      .filter(([, topic]) => topic && textTopics.has(topic)),
+  );
   result.editor = {
     ...result.editor,
     name: doc.name,
     positions: Object.fromEntries(doc.nodes.map((n) => [n.name, n.position])),
-    overlays: Object.fromEntries(
-      Object.entries(result.editor.overlays ?? {}).filter(([n, t]) =>
-        names.has(n) && (!t || textTopics.has(String(t)))
-      ),
-    ),
+    overlays,
     auto_pause: Object.fromEntries(
-      Object.entries(result.editor.auto_pause ?? {}).filter(([n]) => names.has(n)),
+      doc.nodes.filter((n) => n.autoPause && overlays[n.name]).map((n) => [n.name, true]),
     ),
   };
   return result;

@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileAudio, FolderOpen, Pause, Play, RotateCcw, RotateCw } from 'lucide-react';
 import { runtime, session, setDuration, timestamp } from '../runtime';
+import { textEndpoints } from '../domain/backend';
 import type { PipelineNode } from '../domain/model';
-import { commands } from '../state/editor';
+import { commands, editor } from '../state/editor';
 import { useStore } from '../state/useStore';
-import { IconButton } from './Controls';
+import { FieldControl, IconButton } from './Controls';
 
 export function MediaSource({ model, locked }: { model: PipelineNode; locked: boolean }) {
   const id = model.id, s = useStore(runtime), clock = s.media[id];
+  const { document } = useStore(editor);
+  const endpoints = textEndpoints(document);
   const input = useRef<HTMLInputElement>(null), video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(''), [uploading, setUploading] = useState(false);
   const [duration, durationChanged] = useState(0),
@@ -169,6 +172,33 @@ export function MediaSource({ model, locked }: { model: PipelineNode; locked: bo
             <span className='mono muted'>{duration ? timestamp(duration) : '—'}</span>
           </div>
           {clock?.autoPaused && <p className='output-note'>{clock.status}</p>}
+          <label className='field field-select nodrag nowheel'>
+            <span>Overlay subtitles</span>
+            <select
+              disabled={locked}
+              value={model.overlay ?? ''}
+              onChange={(e) =>
+                commands.node(
+                  id,
+                  e.target.value ? { overlay: e.target.value } : { overlay: '', autoPause: false },
+                )}
+            >
+              <option value=''>None</option>
+              {model.overlay && !endpoints.some((e) => e.topic === model.overlay) && (
+                <option value={model.overlay}>{model.overlay}</option>
+              )}
+              {endpoints.map((e) => <option key={e.id} value={e.topic}>{e.label}</option>)}
+            </select>
+          </label>
+          <FieldControl
+            field={{ key: 'auto_pause', label: 'Auto pause', type: 'toggle', default: false }}
+            value={Boolean(model.autoPause)}
+            disabled={locked || !model.overlay}
+            onChange={(v) => commands.node(id, { autoPause: Boolean(v) })}
+          />
+          {!model.overlay && (
+            <p className='output-note'>Auto pause waits for an attached subtitle endpoint.</p>
+          )}
         </>
       )}
       {uploading && <p className='output-note'>Uploading to the local backend…</p>}

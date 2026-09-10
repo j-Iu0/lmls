@@ -45,6 +45,13 @@ and uses authoritative startup/running/seeking/stopping states. Snapshot epochs
 reject late results; seek clears subtitle selection/history. Reconnect restores
 active state, while an idle snapshot does not replace local draft edits.
 
+The `[editor.overlays]` and `[editor.auto_pause]` extension settings belong to the
+node model, not node options: each media file node carries an overlay text topic
+and an auto-pause switch, chosen from the same published text endpoints the
+subtitle monitor lists. Export drops an overlay whose topic no enabled text port
+publishes, and drops auto pause with it, so the server's "automatic pause needs an
+attached text output" rule cannot be violated by a stale draft.
+
 ## Failure and notification ownership
 
 Backend snapshots retain the authoritative run failure and transport state is
