@@ -17,7 +17,8 @@ export interface Caption {
   segment?: string;
   source: string;
   producer: string;
-  topic: string;
+  port?: string;
+  topic?: string;
   language: string;
   text: string;
   final: boolean;

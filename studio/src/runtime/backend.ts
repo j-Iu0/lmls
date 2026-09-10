@@ -77,12 +77,17 @@ export function mapSnapshot(data: Snapshot, previous: RuntimeSnapshot): RuntimeS
       detail: node.startup?.message ?? node.startup?.phase,
     };
   }
-  const captions: Caption[] = data.subtitles.map((c) => ({
-    id: `${data.epoch}:${c.topic}:${c.segment_id}`,
-    segment: c.segment_id,
-    source: c.source ?? 'Live source',
-    producer: c.node,
-    topic: c.topic,
+  const captions: Caption[] = data.subtitles.map((c) => {
+    const outputs = Object.entries(
+      data.config.nodes.find((n) => n.name === c.node)?.outputs ?? {},
+    );
+    return {
+      id: `${data.epoch}:${c.topic}:${c.segment_id}`,
+      segment: c.segment_id,
+      source: c.source ?? 'Live source',
+      producer: c.node,
+      port: outputs.find(([, t]) => t === c.topic)?.[0] ?? (outputs.length === 1 ? outputs[0][0] : undefined),
+      topic: c.topic,
     language: c.lang,
     text: c.text,
     final: c.is_final,
@@ -92,12 +97,13 @@ export function mapSnapshot(data: Snapshot, previous: RuntimeSnapshot): RuntimeS
     latency: round(c.end_to_end_ms),
     stage: round(c.stage_latency_ms[c.node] ?? 0),
     trace: Object.entries(c.stage_latency_ms).map(([name, ms]) => ({
-      name,
-      ms: round(ms),
-      wait: null,
-      kind: data.config.nodes.find((n) => n.name === name)?.impl ?? '',
-    })),
-  }));
+        name,
+        ms: round(ms),
+        wait: null,
+        kind: data.config.nodes.find((n) => n.name === name)?.impl ?? '',
+      })),
+    };
+  });
   const media = Object.fromEntries(
     Object.entries(data.media).map(([id, m]) => [id, {
       position: m.position,

@@ -1,5 +1,5 @@
 import type { Document, Kind } from '../domain/model.ts';
-import { validate } from '../domain/model.ts';
+import { ports, validate } from '../domain/model.ts';
 import { commands, editor } from '../state/editor.ts';
 import { createStore } from '../state/store.ts';
 
@@ -142,6 +142,8 @@ export function advanceSimulation() {
         id,
         source: sourceId,
         producer: n.name,
+        port: Object.entries(ports(n, 'source')).find(([, p]) => p === 'text')?.[0] ??
+          Object.keys(ports(n, 'source'))[0],
         topic: `${n.id}.text`,
         language,
         text,

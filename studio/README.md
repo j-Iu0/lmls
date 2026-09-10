@@ -48,8 +48,10 @@ deno task build
 - Seeking a running file restarts the graph generation and clears old subtitles.
   File playback resumes with Play source after restart. Completed graphs can be
   run again; seek is disabled after completion to protect subsequent draft edits.
-- Profiler and Topics sit beside the bottom subtitle monitor. Click a subtitle
-  to inspect its actual stage lineage. No missing queue wait is invented.
+- Profiler and an endpoint filter sit beside the bottom subtitle monitor. The
+  monitor shows every text endpoint; the Endpoints button hides/show specific
+  producing nodes. Click a subtitle to inspect its actual stage lineage. No
+  missing queue wait is invented.
 
 ## Media and measurements
 

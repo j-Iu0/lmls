@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { runtime, timestamp } from '../runtime';
 import type { Caption } from '../runtime';
+import { ports } from '../domain/model';
+import { editor } from '../state/editor';
 import { useStore } from '../state/useStore';
 import { IconButton } from './Controls';
 
@@ -25,17 +27,32 @@ export function SubtitleDock(
   },
 ) {
   const s = useStore(runtime);
+  const { document } = useStore(editor);
   const [height, setHeight] = useState(230),
     [collapsed, setCollapsed] = useState(false),
     [expanded, setExpanded] = useState(false);
-  const [topicsOpen, setTopicsOpen] = useState(false),
-    [hidden, setHidden] = useState<string[]>([]),
+  const [filterOpen, setFilterOpen] = useState(false),
+    [picked, setPicked] = useState<string[]>([]),
     [following, setFollowing] = useState(true);
   const feed = useRef<HTMLDivElement>(null);
   const rows = s.captions;
-  const topics = [...new Set(rows.map((row) => row.topic))];
+  // Every text endpoint of the pipeline, labelled node.port because port names
+  // are scoped by module. Observed endpoints are merged in so a caption whose
+  // node has left the draft stays filterable.
+  const endpoints = new Map<string, string>();
+  for (const node of document.nodes) {
+    if (node.enabled === false) continue;
+    for (const [port, payload] of Object.entries(ports(node, 'source'))) {
+      if (payload === 'text') endpoints.set(`${node.name}:${port}`, `${node.name}.${port}`);
+    }
+  }
+  for (const row of rows) {
+    if (row.port && !endpoints.has(`${row.producer}:${row.port}`)) {
+      endpoints.set(`${row.producer}:${row.port}`, `${row.producer}.${row.port}`);
+    }
+  }
   const groups = new Map<string, Caption[]>();
-  for (const row of rows.filter((row) => !hidden.includes(row.topic))) {
+  for (const row of rows.filter((row) => picked.includes(`${row.producer}:${row.port ?? ''}`))) {
     const key = `${row.source}:${row.segment ?? row.start}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
@@ -114,11 +131,11 @@ export function SubtitleDock(
           </button>
           <button
             className='text-button'
-            onClick={() => setTopicsOpen(!topicsOpen)}
-            aria-expanded={topicsOpen}
+            onClick={() => setFilterOpen(!filterOpen)}
+            aria-expanded={filterOpen}
           >
             <SlidersHorizontal size={14} />
-            <span>Topics</span>
+            <span>Endpoints</span>
           </button>
           <IconButton
             label={expanded ? 'Restore subtitle monitor' : 'Expand subtitle monitor'}
@@ -140,23 +157,23 @@ export function SubtitleDock(
           </IconButton>
         </div>
       </header>
-      {topicsOpen && (
-        <div className='topic-picker'>
-          {topics.length
-            ? topics.map((topic) => (
-              <label key={topic}>
+      {filterOpen && (
+        <div className='endpoint-picker'>
+          {[...endpoints.entries()].length
+            ? [...endpoints.entries()].map(([id, label]) => (
+              <label key={id}>
                 <input
                   type='checkbox'
-                  checked={!hidden.includes(topic)}
+                  checked={picked.includes(id)}
                   onChange={(e) =>
-                    setHidden(
-                      e.target.checked ? hidden.filter((t) => t !== topic) : [...hidden, topic],
+                    setPicked(
+                      e.target.checked ? [...picked, id] : picked.filter((s) => s !== id),
                     )}
                 />
-                {topic}
+                {label}
               </label>
             ))
-            : <span>Text topics appear when the pipeline emits captions.</span>}
+            : <span>Text endpoints appear once a pipeline is loaded.</span>}
         </div>
       )}
       {!collapsed && (
@@ -180,9 +197,9 @@ export function SubtitleDock(
                   : 'Listening for the next segment…'}
               </span>
               <small>
-                {hidden.length
-                  ? 'Enable a topic to see its subtitles.'
-                  : 'Original text, translations, and every revision.'}
+                {picked.length
+                  ? 'Original text, translations, and every revision.'
+                  : 'Enable an endpoint to see its subtitles.'}
               </small>
             </div>
           )}
@@ -207,7 +224,7 @@ export function SubtitleDock(
                       >
                         {row.language}
                       </span>
-                      <span className='mono topic'>{row.topic}</span>
+                      {row.topic && <span className='mono topic'>{row.topic}</span>}
                       <span className={`final-chip ${row.final ? '' : 'partial'}`}>
                         {row.final ? <Check size={11} /> : <i className='status-dot active' />}
                         {row.final ? 'Final' : 'Partial'}
