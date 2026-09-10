@@ -270,20 +270,10 @@ export function toBackend(doc: Document): BackendConfig {
       }
     }
   }
-  const priorTopics = new Set(doc.backend.nodes.flatMap((n) => Object.values(n.outputs)));
-  const selected = Array.isArray(result.editor.subtitle_topics)
-    ? result.editor.subtitle_topics
-    : [];
   result.editor = {
     ...result.editor,
     name: doc.name,
     positions: Object.fromEntries(doc.nodes.map((n) => [n.name, n.position])),
-    subtitle_topics: [
-      ...new Set([
-        ...selected.filter((t) => typeof t === 'string' && textTopics.has(t)),
-        ...[...textTopics].filter((t) => !priorTopics.has(t)),
-      ]),
-    ],
     overlays: Object.fromEntries(
       Object.entries(result.editor.overlays ?? {}).filter(([n, t]) =>
         names.has(n) && (!t || textTopics.has(String(t)))

@@ -81,7 +81,7 @@
   font-size: 11px;
   color: #a5adb6;
 }
-.topic-picker {
+.endpoint-picker {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -92,7 +92,7 @@
   font-size: 11px;
   color: #adb6c1;
 }
-.topic-picker label {
+.endpoint-picker label {
   display: flex;
   align-items: center;
   gap: 5px;

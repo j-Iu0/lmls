@@ -42,9 +42,6 @@ def catalog() -> list[dict[str, Any]]:
 def to_editor(cfg: GraphConfig) -> dict[str, Any]:
     settings = copy.deepcopy(cfg.settings)
     editor = settings.pop("editor", {})
-    topics = sorted({topic for n in cfg.active for p, topic in n.outputs.items()
-                     if resolve(n.impl).outputs[p] is TextFrame})
-    editor.setdefault("subtitle_topics", topics)
     editor.setdefault("positions", {})
     editor.setdefault("overlays", {})
     editor.setdefault("auto_pause", {})
@@ -104,18 +101,15 @@ def validate_editor(data: dict[str, Any]) -> tuple[GraphConfig, list[str]]:
     ed = data.get("editor", {})
     topics = {t for n in cfg.active for p, t in n.outputs.items()
               if resolve(n.impl).outputs[p] is TextFrame}
-    selected = ed.get("subtitle_topics", [])
-    if not isinstance(selected, list) or not all(isinstance(t, str) for t in selected):
-        raise ConfigError("subtitle_topics must be a list of text topics")
-    if set(selected) - topics:
-        raise ConfigError(f"subtitle panel references unavailable text topics: {sorted(set(selected)-topics)}")
     for key in ("overlays", "auto_pause", "positions"):
         if not isinstance(ed.get(key, {}), dict):
             raise ConfigError(f"editor.{key} must be an object")
     for name, topic in ed.get("overlays", {}).items():
         if name not in names or (topic and topic not in topics):
             raise ConfigError(f"invalid overlay connection for {name!r}")
-    observed = set(selected) | {t for t in ed.get('overlays', {}).values() if t}
+    # The subtitle monitor subscribes to every text output, so every text topic is
+    # observed even when nothing else in the graph consumes it.
+    observed = topics
     warnings = [w for w in warnings if w not in {
         f"topic {t!r} is published but nobody subscribes to it" for t in observed}]
     return cfg, warnings
@@ -169,7 +163,6 @@ def default_config(root: Path) -> GraphConfig:
          "out": {"text_out": "text.translated"}, "target": "vi"},
     ]
     return config_from_dict({"node": nodes, "audio_backpressure": "block", "editor": {
-        "subtitle_topics": ["text.corrected", "text.translated"],
         "overlays": {"media": "text.translated"}, "auto_pause": {"media": True},
         "positions": {"media": {"x": 70, "y": 110}, "segment": {"x": 440, "y": 110},
                       "transcribe": {"x": 740, "y": 110}, "correct": {"x": 1040, "y": 50},
