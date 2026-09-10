@@ -180,11 +180,16 @@ def test_an_out_string_cannot_be_an_underscore():
         cfg_from(nodes)
 
 
-def test_an_all_underscore_out_list_needs_an_output_topic():
+async def test_an_all_underscore_out_list_publishes_nothing():
+    """A transform with every output port skipped is valid and simply publishes nothing."""
     nodes = full_pipeline()
     nodes[5]["out"] = ["_", "_"]
-    with pytest.raises(GraphError, match="needs an output topic"):
-        validate(cfg_from(nodes))
+    nodes[6]["in"] = ["text.raw", "text.corrected"]  # text.out is no longer produced
+    assert validate(cfg_from(nodes)) == []
+    graph = Graph(cfg_from(nodes))
+    await graph.run(timeout=20)
+    assert "text.out" not in graph.bus.report()
+    assert graph.metrics.counts.get("vi", 0) == 0  # translations were dropped
 
 
 async def test_a_skipped_out_port_publishes_nothing():

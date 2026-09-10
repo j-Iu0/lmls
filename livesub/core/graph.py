@@ -73,8 +73,6 @@ def validate(cfg: GraphConfig) -> list[str]:
             raise GraphError(
                 f"node {n.name!r} ({cls.__name__}) declares no output ports"
             )
-        if cls.outputs and not n.outputs:
-            raise GraphError(f"node {n.name!r} ({cls.__name__}) needs an output topic")
 
     # A graph needs at least one node that produces without consuming.
     if not any(not cls.inputs for cls in classes.values()):
