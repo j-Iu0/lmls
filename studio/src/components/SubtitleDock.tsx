@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { runtime, timestamp } from '../runtime';
 import type { Caption } from '../runtime';
-import { ports } from '../domain/model';
+import { textEndpoints } from '../domain/backend';
 import { editor } from '../state/editor';
 import { useStore } from '../state/useStore';
 import { IconButton } from './Controls';
@@ -36,20 +36,16 @@ export function SubtitleDock(
     [following, setFollowing] = useState(true);
   const feed = useRef<HTMLDivElement>(null);
   const rows = s.captions;
-  // Every text endpoint of the pipeline, grouped by producing node. Port names
-  // are scoped by module, so labels pair each node with its ports. Observed
-  // endpoints are merged in so a caption whose node left the draft stays filterable.
+  // Every published text endpoint of the pipeline, grouped by producing node.
+  // Port names are scoped by module, so labels pair each node with its ports.
+  // Observed endpoints are merged in so a caption whose node left the draft
+  // stays filterable. The media sources' overlay picker uses the same list.
   const endpoints = new Map<string, string[]>();
   const addEndpoint = (node: string, port: string) => {
     const ports_ = endpoints.get(node) ?? [];
     if (!ports_.includes(port)) endpoints.set(node, [...ports_, port]);
   };
-  for (const node of document.nodes) {
-    if (node.enabled === false) continue;
-    for (const [port, payload] of Object.entries(ports(node, 'source'))) {
-      if (payload === 'text') addEndpoint(node.name, port);
-    }
-  }
+  for (const e of textEndpoints(document)) addEndpoint(e.node, e.port);
   for (const row of rows) {
     if (row.port) addEndpoint(row.producer, row.port);
   }

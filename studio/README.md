@@ -45,6 +45,11 @@ deno task build
   source to begin. Media time comes from the browser, not a simulated timer.
 - Pause gates file playback. It does not stop microphones or independent live
   branches. Stop releases the graph and unlocks editing.
+- Local file sources carry an Overlay subtitles picker, listing the same text
+  endpoints as the subtitle monitor, and an Auto pause switch that holds playback
+  until the attached subtitles for the current segment have arrived. Auto pause
+  stays off until an overlay is attached; saved `[editor.overlays]` and
+  `[editor.auto_pause]` round-trip through these controls.
 - Seeking a running file restarts the graph generation and clears old subtitles.
   File playback resumes with Play source after restart. Completed graphs can be
   run again; seek is disabled after completion to protect subsequent draft edits.

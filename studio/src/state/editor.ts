@@ -18,7 +18,10 @@ export const commands = {
   adopt(document: Document, locked: boolean) {
     editor.set({ document, locked, past: [], future: [] });
   },
-  node(id: string, changes: Partial<Pick<PipelineNode, 'enabled' | 'mode'>>) {
+  node(
+    id: string,
+    changes: Partial<Pick<PipelineNode, 'enabled' | 'mode' | 'overlay' | 'autoPause'>>,
+  ) {
     const doc = editor.get().document;
     return commit({ ...doc, nodes: doc.nodes.map((n) => n.id === id ? { ...n, ...changes } : n) });
   },

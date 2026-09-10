@@ -38,6 +38,10 @@ export interface PipelineNode {
   options: Record<string, Value>;
   enabled?: boolean;
   mode?: string;
+  /** Text topic shown as this media file's subtitle overlay; '' means none. */
+  overlay?: string;
+  /** Pause this file until its overlay subtitles for the current segment arrive. */
+  autoPause?: boolean;
   raw?: import('./backend.ts').BackendNode;
   unwiredInputs?: Record<string, string>;
 }

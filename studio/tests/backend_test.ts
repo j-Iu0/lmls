@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { fromBackend, installCatalog, toBackend } from '../src/domain/backend.ts';
+import { fromBackend, installCatalog, textEndpoints, toBackend } from '../src/domain/backend.ts';
 import type { BackendConfig, CatalogEntry } from '../src/domain/backend.ts';
 import { connectionError, makeNode } from '../src/domain/model.ts';
 import { mapSnapshot } from '../src/runtime/backend.ts';
@@ -47,6 +47,30 @@ Deno.test('unknown nested options, disabled nodes and editor extension metadata 
   equal(output.nodes[1], config.nodes[1]);
   equal(output.editor.extension, config.editor.extension);
   equal((output.editor.positions as Record<string, unknown>)[doc.nodes[0].name], { x: 13, y: 47 });
+});
+Deno.test('overlay and auto-pause editor settings round trip and follow validity of their topic', () => {
+  const config = structuredClone(fixtures.configs['mock.toml']);
+  config.editor.overlays = { src: 'text.out' };
+  config.editor.auto_pause = { src: true };
+  const doc = fromBackend(config);
+  assert(doc.nodes[0].overlay === 'text.out');
+  assert(doc.nodes[0].autoPause === true);
+  equal(toBackend(doc).editor.overlays, { src: 'text.out' });
+  equal(toBackend(doc).editor.auto_pause, { src: true });
+  // Clearing the overlay clears auto pause in the same produced document.
+  doc.nodes[0].overlay = '';
+  const cleared = toBackend(doc);
+  equal(cleared.editor.overlays, {});
+  equal(cleared.editor.auto_pause, {});
+  // An overlay topic no enabled text port publishes is dropped with its auto pause.
+  doc.nodes[0].overlay = 'text.gone';
+  doc.nodes[0].autoPause = true;
+  const stale = toBackend(doc);
+  equal(stale.editor.overlays, {});
+  equal(stale.editor.auto_pause, {});
+  // Overlay choices are the published text endpoints, keyed by producer and port.
+  const endpoints = textEndpoints(doc).map((e) => e.id).sort();
+  equal(endpoints, ['asr:text', 'fix:text_out', 'vi:text_out']);
 });
 Deno.test('real port types distinguish both outputs of translators and reject incompatible links', () => {
   const doc = fromBackend(fixtures.configs['mock.toml']);
