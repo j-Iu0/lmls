@@ -1,5 +1,11 @@
 /// <reference lib="dom" />
-import { fromBackend, installCatalog, textEndpoints, toBackend } from '../src/domain/backend.ts';
+import {
+  attachOverlay,
+  fromBackend,
+  installCatalog,
+  textEndpoints,
+  toBackend,
+} from '../src/domain/backend.ts';
 import type { BackendConfig, CatalogEntry } from '../src/domain/backend.ts';
 import { connectionError, makeNode } from '../src/domain/model.ts';
 import { mapSnapshot } from '../src/runtime/backend.ts';
@@ -107,6 +113,40 @@ Deno.test('endpoint list follows the canvas nodes; topics follow the wiring', ()
     toBackend(doc).nodes.find((n) => n.name === terminal.name)?.outputs,
     { text_out: `${terminal.name}.text_out` },
   );
+});
+Deno.test('attaching an overlay wires the endpoint it needs', () => {
+  const doc = fromBackend(fixtures.configs['mock.toml']);
+  const src = doc.nodes.find((n) => n.name === 'src')!;
+  // vi's corrected port is unwired and topic-less until the overlay needs it.
+  assert(textEndpoints(doc).find((e) => e.id === 'vi:corrected')!.topic === '');
+  const attached = attachOverlay(doc, src.id, { node: 'vi', port: 'corrected' });
+  assert(attached.nodes.find((n) => n.id === src.id)!.overlay === 'vi.corrected');
+  const config = toBackend(attached);
+  equal(config.editor.overlays, { src: 'vi.corrected' });
+  equal(config.nodes.find((n) => n.name === 'vi')!.outputs, {
+    text_out: 'text.out',
+    corrected: 'vi.corrected',
+  });
+  // Attaching to a publishing endpoint never rewrites its topic.
+  const rebased = attachOverlay(attached, src.id, { node: 'vi', port: 'text_out' });
+  assert(rebased.nodes.find((n) => n.id === src.id)!.overlay === 'text.out');
+  equal(
+    toBackend(rebased).nodes.find((n) => n.name === 'vi')!.outputs,
+    { text_out: 'text.out', corrected: 'vi.corrected' },
+  );
+  // A library-added node is wired on attach as well; its raw is synthesized.
+  const fresh = makeNode('mock_translator', 'fresh', { x: 0, y: 0 });
+  rebased.nodes.push(fresh);
+  const wired = attachOverlay(rebased, src.id, { node: fresh.name, port: 'text_out' });
+  assert(wired.nodes.find((n) => n.id === src.id)!.overlay === `${fresh.name}.text_out`);
+  equal(
+    toBackend(wired).nodes.find((n) => n.name === fresh.name)!.outputs,
+    { text_out: `${fresh.name}.text_out` },
+  );
+  // Clearing detaches the overlay and its auto pause.
+  const cleared = attachOverlay(wired, src.id, null);
+  assert(cleared.nodes.find((n) => n.id === src.id)!.overlay === '');
+  assert(cleared.nodes.find((n) => n.id === src.id)!.autoPause === false);
 });
 Deno.test('real port types distinguish both outputs of translators and reject incompatible links', () => {
   const doc = fromBackend(fixtures.configs['mock.toml']);

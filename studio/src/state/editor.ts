@@ -1,5 +1,6 @@
 import { connectionError, example, makeNode } from '../domain/model.ts';
 import type { Document, Kind, PipelineNode, Value } from '../domain/model.ts';
+import { attachOverlay, textEndpoints } from '../domain/backend.ts';
 import { createStore } from './store.ts';
 
 export const editor = createStore({
@@ -40,17 +41,31 @@ export const commands = {
       ),
     });
   },
+  /** Attach or clear a source's subtitle overlay; wiring the endpoint if needed. */
+  overlay(source: string, endpoint: { node: string; port: string } | null) {
+    return commit(attachOverlay(editor.get().document, source, endpoint));
+  },
   add(kind: Kind, position: PipelineNode['position']) {
     const doc = editor.get().document;
     return commit({ ...doc, nodes: [...doc.nodes, makeNode(kind, crypto.randomUUID(), position)] });
   },
   remove(ids: string[], edgeIds: string[] = []) {
     const doc = editor.get().document;
-    return commit({
+    const next: Document = {
       ...doc,
       nodes: doc.nodes.filter((n) => !ids.includes(n.id)),
       edges: doc.edges.filter((e) =>
         !ids.includes(e.source) && !ids.includes(e.target) && !edgeIds.includes(e.id)
+      ),
+    };
+    // Overlays follow their endpoint: a deleted publisher releases the attached
+    // source's overlay and auto pause in the same commit, instead of dangling
+    // until the next save. Undo restores the node with the overlay it powered.
+    const topics = new Set(textEndpoints(next).map((e) => e.topic));
+    return commit({
+      ...next,
+      nodes: next.nodes.map((n) =>
+        n.overlay && !topics.has(n.overlay) ? { ...n, overlay: '', autoPause: false } : n
       ),
     });
   },
