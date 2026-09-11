@@ -10,7 +10,10 @@ import { FieldControl, IconButton } from './Controls';
 export function MediaSource({ model, locked }: { model: PipelineNode; locked: boolean }) {
   const id = model.id, s = useStore(runtime), clock = s.media[id];
   const { document } = useStore(editor);
+  // The overlay select shares the subtitle dock's endpoint list; picking an
+  // unwired endpoint wires it (assigns its topic) as a side of the same commit.
   const endpoints = textEndpoints(document);
+  const attached = model.overlay ? endpoints.find((e) => e.topic === model.overlay) : undefined;
   const input = useRef<HTMLInputElement>(null), video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState(''), [uploading, setUploading] = useState(false);
   const [duration, durationChanged] = useState(0),
@@ -176,18 +179,19 @@ export function MediaSource({ model, locked }: { model: PipelineNode; locked: bo
             <span>Overlay subtitles</span>
             <select
               disabled={locked}
-              value={model.overlay ?? ''}
-              onChange={(e) =>
-                commands.node(
-                  id,
-                  e.target.value ? { overlay: e.target.value } : { overlay: '', autoPause: false },
-                )}
+              value={model.overlay ? attached?.id ?? model.overlay : ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === (model.overlay ?? '')) return;
+                const chosen = endpoints.find((x) => x.id === value) ?? null;
+                commands.overlay(id, chosen ? { node: chosen.node, port: chosen.port } : null);
+              }}
             >
               <option value=''>None</option>
-              {model.overlay && !endpoints.some((e) => e.topic === model.overlay) && (
-                <option value={model.overlay}>{model.overlay}</option>
+              {model.overlay && !attached && (
+                <option value={model.overlay}>{model.overlay} (missing)</option>
               )}
-              {endpoints.map((e) => <option key={e.id} value={e.topic}>{e.label}</option>)}
+              {endpoints.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
             </select>
           </label>
           <FieldControl

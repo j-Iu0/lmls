@@ -54,6 +54,31 @@ Deno.test('document roundtrip preserves field values and positions; malformed do
   rejects(() => parseDocument(JSON.stringify(cycle)));
 });
 
+Deno.test('deleting a publisher releases the overlay and auto pause attached to it', () => {
+  commands.lock(false);
+  commands.replace(example());
+  commands.overlay('source', { node: 'Translation', port: 'out' });
+  commands.node('source', { autoPause: true });
+  assert(editor.get().document.nodes.find((n) => n.id === 'source')!.overlay === 'Translation.out');
+  assert(commands.remove(['translate']) === true);
+  const source = editor.get().document.nodes.find((n) => n.id === 'source')!;
+  assert(source.overlay === '' && source.autoPause === false);
+  // Undo restores the node together with the overlay it powered.
+  commands.undo();
+  const restored = editor.get().document.nodes.find((n) => n.id === 'source')!;
+  assert(restored.overlay === 'Translation.out' && restored.autoPause === true);
+  // Edge-only removals keep topics publishing, so overlays survive them.
+  commands.redo();
+  const orphan = editor.get().document.nodes.find((n) => n.id === 'source')!;
+  assert(orphan.overlay === '' && orphan.autoPause === false);
+  commands.overlay('source', { node: 'Transcription', port: 'out' });
+  commands.remove([], ['vad-asr']);
+  assert(
+    editor.get().document.nodes.find((n) => n.id === 'source')!.overlay ===
+      'Transcription.out',
+  );
+});
+
 Deno.test('runtime lock rejects all graph mutations, including undo, but permits layout changes', () => {
   commands.lock(false);
   commands.replace(example());

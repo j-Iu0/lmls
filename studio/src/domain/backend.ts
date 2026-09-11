@@ -237,6 +237,45 @@ export function fromBackend(config: BackendConfig): Document {
   };
 }
 
+/** Attach a media source's subtitle overlay to a text endpoint. An endpoint
+ * without a topic is wired on the spot: its port gains the topic the run will
+ * publish, exactly as if it had been connected. Clearing detaches the overlay
+ * and its auto pause. */
+export function attachOverlay(
+  doc: Document,
+  source: string,
+  endpoint: { node: string; port: string } | null,
+): Document {
+  if (!endpoint) {
+    return {
+      ...doc,
+      nodes: doc.nodes.map((n) => n.id === source ? { ...n, overlay: '', autoPause: false } : n),
+    };
+  }
+  const target = doc.nodes.find((n) => n.name === endpoint.node);
+  if (!target) return doc;
+  const topic = publishedOutputs(doc).get(target.id)?.[endpoint.port] ??
+    `${target.name}.${endpoint.port}`;
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.name === endpoint.node) {
+        const raw = n.raw ?? {
+          name: n.name,
+          impl: n.kind,
+          enabled: n.enabled ?? true,
+          mode: n.mode ?? 'default',
+          inputs: {},
+          outputs: {},
+          options: structuredClone(n.options),
+        };
+        return { ...n, raw: { ...raw, outputs: { ...raw.outputs, [endpoint.port]: topic } } };
+      }
+      return n.id === source ? { ...n, overlay: topic } : n;
+    }),
+  };
+}
+
 /** Keep the backend document's extension settings; edit only graph-owned fields. */
 export function toBackend(doc: Document): BackendConfig {
   if (!doc.backend) throw new Error('Open a pipeline TOML or JSON configuration first.');
