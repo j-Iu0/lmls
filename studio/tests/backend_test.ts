@@ -68,9 +68,45 @@ Deno.test('overlay and auto-pause editor settings round trip and follow validity
   const stale = toBackend(doc);
   equal(stale.editor.overlays, {});
   equal(stale.editor.auto_pause, {});
-  // Overlay choices are the published text endpoints, keyed by producer and port.
-  const endpoints = textEndpoints(doc).map((e) => e.id).sort();
-  equal(endpoints, ['asr:text', 'fix:text_out', 'vi:text_out']);
+  // Endpoints follow the canvas nodes; only wired ports carry a topic.
+  const endpoints = textEndpoints(doc);
+  equal(
+    endpoints.map((e) => e.id).sort(),
+    ['asr:text', 'fix:text_out', 'vi:corrected', 'vi:text_out'],
+  );
+  equal(endpoints.find((e) => e.id === 'vi:corrected')!.topic, '');
+  equal(endpoints.find((e) => e.id === 'vi:text_out')!.topic, 'text.out');
+});
+Deno.test('endpoint list follows the canvas nodes; topics follow the wiring', () => {
+  const doc = fromBackend(fixtures.configs['mock.toml']);
+  // A library-added node lists its declared text ports right away, topic-less
+  // until wired; adoption of a run keeps the same ports listed.
+  const terminal = makeNode('mock_translator', 'new', { x: 0, y: 0 });
+  doc.nodes.push(terminal);
+  let endpoints = textEndpoints(doc);
+  equal(
+    endpoints.filter((e) => e.node === terminal.name).map((e) => e.id),
+    [`${terminal.name}:text_out`, `${terminal.name}:corrected`],
+  );
+  assert(endpoints.find((e) => e.id === `${terminal.name}:text_out`)!.topic === '');
+  // Wiring one port names its topic exactly as the run will publish it.
+  doc.edges.push({
+    id: 'new',
+    source: terminal.id,
+    target: doc.nodes.at(-1)!.id,
+    sourceHandle: 'text_out',
+    targetHandle: 'text',
+  });
+  endpoints = textEndpoints(doc);
+  assert(
+    endpoints.find((e) => e.id === `${terminal.name}:text_out`)!.topic ===
+      `${terminal.name}.text_out`,
+  );
+  assert(endpoints.find((e) => e.id === `${terminal.name}:corrected`)!.topic === '');
+  equal(
+    toBackend(doc).nodes.find((n) => n.name === terminal.name)?.outputs,
+    { text_out: `${terminal.name}.text_out` },
+  );
 });
 Deno.test('real port types distinguish both outputs of translators and reject incompatible links', () => {
   const doc = fromBackend(fixtures.configs['mock.toml']);

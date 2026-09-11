@@ -137,7 +137,26 @@ export function nodeFields(node: PipelineNode): Field[] {
   return fields;
 }
 
-/** Published text endpoints, identified exactly like the subtitle dock's rows. */
+/** Topics every node will publish when this document runs: saved topics first,
+ * then the editor's wiring, naming new connections `${name}.${port}`. Ports
+ * left unwired are absent, so a draft preview matches the running graph. */
+function publishedOutputs(doc: Document): Map<string, Record<string, string>> {
+  const outputs = new Map<string, Record<string, string>>();
+  for (const n of doc.nodes) {
+    const topics: Record<string, string> = { ...(n.raw?.outputs ?? {}) };
+    for (const edge of doc.edges.filter((e) => e.source === n.id)) {
+      const port = edge.sourceHandle ?? Object.keys(catalog[n.kind].outputs ?? {})[0];
+      topics[port] ??= edge.topic ?? `${n.name}.${port}`;
+    }
+    outputs.set(n.id, topics);
+  }
+  return outputs;
+}
+
+/** Text endpoints, identified exactly like the subtitle monitor's rows. Every
+ * text output port of an enabled node is listed, so the list follows the nodes
+ * on the canvas and survives adoption of a run. `topic` is the name the run
+ * will publish for that port; '' until the port is wired. */
 export function textEndpoints(doc: Document): {
   node: string;
   port: string;
@@ -146,20 +165,18 @@ export function textEndpoints(doc: Document): {
   topic: string;
 }[] {
   const result: { node: string; port: string; id: string; label: string; topic: string }[] = [];
+  const outputs = publishedOutputs(doc);
   for (const n of doc.nodes) {
     if (n.enabled === false) continue;
-    const payloads = catalog[n.kind].outputs ?? {};
-    const published = n.raw?.outputs
-      ? Object.entries(n.raw.outputs)
-      : Object.entries(ports(n, 'source'));
-    for (const [port, topic] of published) {
-      if (payloads[port] !== 'text') continue;
+    const topics = outputs.get(n.id) ?? {};
+    for (const [port, payload] of Object.entries(ports(n, 'source'))) {
+      if (payload !== 'text') continue;
       result.push({
         node: n.name,
         port,
         id: `${n.name}:${port}`,
         label: `${n.name} · ${port}`,
-        topic: String(topic),
+        topic: topics[port] ?? '',
       });
     }
   }
@@ -226,14 +243,7 @@ export function toBackend(doc: Document): BackendConfig {
   const result = structuredClone(doc.backend);
   const names = new Set(doc.nodes.map((n) => n.name));
   if (names.size !== doc.nodes.length) throw new Error('Node names must be unique.');
-  const outputs = new Map<string, Record<string, string>>();
-  for (const n of doc.nodes) {
-    outputs.set(n.id, { ...(n.raw?.outputs ?? {}) });
-    for (const edge of doc.edges.filter((e) => e.source === n.id)) {
-      const port = edge.sourceHandle ?? Object.keys(catalog[n.kind].outputs ?? {})[0];
-      outputs.get(n.id)![port] ??= edge.topic ?? `${n.name}.${port}`;
-    }
-  }
+  const outputs = publishedOutputs(doc);
   result.nodes = doc.nodes.map((n) => {
     const inputs = { ...n.unwiredInputs };
     // Preserve original fan-in aliases and ordering when the wiring is unchanged.
