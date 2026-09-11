@@ -14,9 +14,9 @@ from dataclasses import replace
 
 import pytest
 
-from livesub.core.registry import build
-from livesub.core.types import Lineage, TextFrame
-from livesub.llm.ollama_engine import OllamaEngine
+from lmls.core.registry import build
+from lmls.core.types import Lineage, TextFrame
+from lmls.llm.ollama_engine import OllamaEngine
 
 DEAD_HOST = "http://127.0.0.1:1"  # nothing listens on port 1; connection refused at once
 
@@ -26,7 +26,7 @@ class StubEngine:
 
     def __init__(self, data: dict | None):
         self.data = data
-        from livesub.llm.mlx_engine import GenerationStats
+        from lmls.llm.mlx_engine import GenerationStats
 
         self.stats = GenerationStats()
 

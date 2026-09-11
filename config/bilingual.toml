@@ -3,7 +3,7 @@
 # one node added. The display shows three lines per utterance. Both translators share one
 # Ollama engine per (host, model), so the server still holds the model only once.
 #
-#   livesub run --config config/bilingual.toml
+#   lmls run --config config/bilingual.toml
 
 [settings]
 target = "vi"

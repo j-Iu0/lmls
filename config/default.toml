@@ -9,8 +9,8 @@
 # fused stage talks to an Ollama server, so it runs on Linux, Windows, NVIDIA, AMD, or CPU.
 # The Apple Silicon presets are config/mlx.toml (split) and config/fused.toml (fused).
 #
-#   livesub run --config config/default.toml
-#   livesub graph --config config/default.toml --mermaid
+#   lmls run --config config/default.toml
+#   lmls graph --config config/default.toml --mermaid
 #
 # Prerequisites, once:
 #
@@ -29,7 +29,7 @@ target = "vi"
 name = "mic"
 impl = "mic"
 out = "audio.raw"
-device = "default"      # `livesub devices` lists them; "Background Music" = system audio
+device = "default"      # `lmls devices` lists them; "Background Music" = system audio
 
 # ── noise reduction (OPTIONAL -- and OFF here, on purpose) ─────────────────────
 # There is no denoise node in this wiring, and that is an evidence-based decision, not
@@ -42,7 +42,7 @@ device = "default"      # `livesub devices` lists them; "Background Music" = sys
 # spectral subtraction introduces artefacts it has never seen, which cost more than the
 # noise removes. To put the stage back and compare for yourself:
 #
-#     livesub run -c config/with_denoise.toml
+#     lmls run -c config/with_denoise.toml
 #
 # ── utterance segmentation ─────────────────────────────────────────────────────
 # The VAD node cuts the stream into utterances. The transcriber consumes utterances,

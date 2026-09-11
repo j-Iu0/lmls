@@ -1,5 +1,5 @@
 """Forwarded options remain usable by any config tool without constructing a module."""
-from livesub.core.registry import option_parameters, resolve
+from lmls.core.registry import option_parameters, resolve
 from lmls_studio.configuration import catalog
 
 

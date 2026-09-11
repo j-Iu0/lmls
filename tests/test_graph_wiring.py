@@ -12,15 +12,15 @@ import asyncio
 
 import pytest
 
-from livesub.core.config import ConfigError, GraphConfig, chain_config, load_config
-from livesub.core.graph import Graph, GraphError, mermaid, validate
-from livesub.core.types import AudioFrame, TextFrame, Utterance
+from lmls.core.config import ConfigError, GraphConfig, chain_config, load_config
+from lmls.core.graph import Graph, GraphError, mermaid, validate
+from lmls.core.types import AudioFrame, TextFrame, Utterance
 
 pytestmark = pytest.mark.asyncio
 
 
 def cfg_from(nodes: list[dict]) -> GraphConfig:
-    from livesub.core.config import _parse_node
+    from lmls.core.config import _parse_node
 
     # Offline replay pushes frames as fast as they are consumed, so drop-oldest would
     # discard most of the recording before the VAD (executor-wrapped per frame) can
@@ -455,7 +455,7 @@ def test_every_shipped_preset_is_a_valid_wiring(preset):
 
 
 async def test_run_does_not_start_stages_a_driver_already_started():
-    """``livesub demo`` starts every stage itself -- to warm the models before playback --
+    """``lmls demo`` starts every stage itself -- to warm the models before playback --
     and then calls ``graph.run()``. Stages hold resources (the websocket sink binds a
     port; a second bind is EADDRINUSE even with no other process present), so each stage
     must be started exactly once no matter how many drivers ask."""
@@ -494,7 +494,7 @@ async def test_run_does_not_start_stages_a_driver_already_started():
 
     sink.start = counted_start
 
-    await graph.start()  # the driver contract: what livesub demo does
+    await graph.start()  # the driver contract: what lmls demo does
     await graph.run(timeout=5.0)
     assert starts == 1
 

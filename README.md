@@ -1,4 +1,4 @@
-# livesub — live multilingo lecture subtitles
+# lmls — live multilingo lecture subtitles
 
 Captures live speech (microphone, video file, stream URL, or system audio),
 transcribes it to English, corrects recognition errors, translates to Vietnamese
@@ -28,7 +28,7 @@ pip install -r requirements.txt
 Run the whole pipeline with **no models to download** — this works immediately:
 
 ```bash
-python -m livesub run --config config/mock.toml
+python -m lmls run --config config/mock.toml
 ```
 
 ### For the real thing: Ollama (the portable default)
@@ -40,7 +40,7 @@ Windows, NVIDIA, AMD, and CPU, still local, no API key, nothing leaves the machi
 ```bash
 ollama pull qwen3.5:4b                        # server side (outside the venv)
 pip install -r requirements-cpu.txt # faster-whisper + the Ollama client
-python -m livesub run --config config/default.toml
+python -m lmls run --config config/default.toml
 ```
 
 First run downloads ~0.5 GB (Whisper small.en) into `~/.cache/huggingface`. The Ollama
@@ -54,15 +54,15 @@ Same architecture, Metal-accelerated models running in-process, measured faster 
 
 ```bash
 pip install -r requirements-mlx.txt
-python -m livesub run --config config/mlx.toml
+python -m lmls run --config config/mlx.toml
 ```
 
 First run downloads ~3.1 GB (Qwen3.5-4B 4-bit) alongside the Whisper weights above.
 Everything after that runs offline. The adapters work standalone too:
 
 ```bash
-python -m livesub.translate run ollama --target vi --text "Hello class"
-python -m livesub.correct run ollama --text "grade ee ent dissent uses back propagation"
+python -m lmls.translate run ollama --target vi --text "Hello class"
+python -m lmls.correct run ollama --text "grade ee ent dissent uses back propagation"
 ```
 
 ### macOS permissions
@@ -71,7 +71,7 @@ The terminal needs microphone access: **System Settings → Privacy & Security �
 Microphone**. Check it is working before anything else:
 
 ```bash
-python -m livesub.input level --seconds 5
+python -m lmls.input level --seconds 5
 ```
 
 A bar that never moves means the permission was not granted to *this* terminal app.
@@ -104,7 +104,7 @@ extra_args  = ["-f", "dshow", "-wasapi_loopback", "1"]
 ```
 
 ```powershell
-python -m livesub run -c config/video.toml
+python -m lmls run -c config/video.toml
 ```
 
 ffmpeg itself can be installed with `winget install ffmpeg` if it is not already on
@@ -119,17 +119,17 @@ changes:
 
 ```bash
 # a video or audio file, or a stream URL (HLS/RTSP/HTTP)
-python -m livesub run -c config/video.toml --source lecture.mp4
-python -m livesub run -c config/video.toml --source https://example.com/live.m3u8
+python -m lmls run -c config/video.toml --source lecture.mp4
+python -m lmls run -c config/video.toml --source https://example.com/live.m3u8
 
 # system audio — captions a Zoom call or a video playing on this Mac
-python -m livesub devices
-python -m livesub run -c config/video.toml --source "Background Music" --device
+python -m lmls devices
+python -m lmls run -c config/video.toml --source "Background Music" --device
 ```
 
 System audio needs a virtual loopback device. **Background Music** (free, already
 installed on the development machine) or **BlackHole** both work — install one, then it
-appears in `livesub devices` and is selected by name.
+appears in `lmls devices` and is selected by name.
 
 ---
 
@@ -138,7 +138,7 @@ appears in `livesub devices` and is selected by name.
 Run the fixed demonstration pipeline from a media file:
 
 ```bash
-python -m livesub demo --source ffmpeg --input lecture.mp3 --language vi \
+python -m lmls demo --source ffmpeg --input lecture.mp3 --language vi \
   --start 240 --seconds 90
 ```
 
@@ -166,7 +166,7 @@ Models are loaded and warmed **before** capture begins. `--buffer-mode drop` sta
 by dropping stale queued items; `--buffer-mode block` applies backpressure and drops
 nothing. Startup events show model-loading progress before capture, and startup failures
 exit cleanly with the module's error. The catch-up mode is intentionally not available in
-the demo. See `livesub demo --help` for model, logging, JSONL, WebSocket, timing, and
+the demo. See `lmls demo --help` for model, logging, JSONL, WebSocket, timing, and
 statistics options.
 
 ---
@@ -187,22 +187,22 @@ Each preset is a different architecture. Nothing in the Python differs between t
 | `config/mock.toml` | No models at all. Used by CI. |
 
 ```bash
-python -m livesub run -c config/bilingual.toml
-python -m livesub run -c config/no_correct.toml --target zh
+python -m lmls run -c config/bilingual.toml
+python -m lmls run -c config/no_correct.toml --target zh
 ```
 
 Inspect a wiring without opening a device or loading a model:
 
 ```bash
-python -m livesub graph -c config/default.toml
-python -m livesub graph -c config/default.toml --mermaid   # diagram for the report
+python -m lmls graph -c config/default.toml
+python -m lmls graph -c config/default.toml --mermaid   # diagram for the report
 ```
 
 There is also a shorthand where **omitting a stage name skips that stage**:
 
 ```bash
-python -m livesub run --chain mic,segment,asr,correct,translate --target vi
-python -m livesub run --chain mic,segment,asr,translate --target vi   # no correct
+python -m lmls run --chain mic,segment,asr,correct,translate --target vi
+python -m lmls run --chain mic,segment,asr,translate --target vi   # no correct
 ```
 
 ---
@@ -213,46 +213,46 @@ Each module has its own command line and can be tested in isolation.
 
 ```bash
 # input
-python -m livesub.input list-devices
-python -m livesub.input mic --seconds 5 --out clip.wav
-python -m livesub.input ffmpeg lecture.mp4 --out clip.wav
+python -m lmls.input list-devices
+python -m lmls.input mic --seconds 5 --out clip.wav
+python -m lmls.input ffmpeg lecture.mp4 --out clip.wav
 
 # noise reduction
-python -m livesub.denoise compare --speech assets/lecture.wav --noise assets/classroom_noise.wav --snr 5
-python -m livesub.denoise mix-noise --speech a.wav --noise b.wav --snr 5 --out noisy.wav
+python -m lmls.denoise compare --speech assets/lecture.wav --noise assets/classroom_noise.wav --snr 5
+python -m lmls.denoise mix-noise --speech a.wav --noise b.wav --snr 5 --out noisy.wav
 
 # transcription
-python -m livesub.transcribe run faster_whisper --in assets/lecture.wav --text-only
-python -m livesub.transcribe devices          # which backends are installed
+python -m lmls.transcribe run faster_whisper --in assets/lecture.wav --text-only
+python -m lmls.transcribe devices          # which backends are installed
 
 # correction
-python -m livesub.correct run rules --text "grade ee ent dissent uses back propagation"
-python -m livesub.correct bench ollama        # latency + what it changes
+python -m lmls.correct run rules --text "grade ee ent dissent uses back propagation"
+python -m lmls.correct bench ollama        # latency + what it changes
 
 # translation
-python -m livesub.translate run ollama --target vi --text "Hello class"
-python -m livesub.translate run mlx_llm --target vi --text "Hello class"   # Apple Silicon
-python -m livesub.translate run ollama --target vi --repair --text "we use a for loop hear"
-python -m livesub.translate compare --target vi    # split vs repair-while-translating
+python -m lmls.translate run ollama --target vi --text "Hello class"
+python -m lmls.translate run mlx_llm --target vi --text "Hello class"   # Apple Silicon
+python -m lmls.translate run ollama --target vi --repair --text "we use a for loop hear"
+python -m lmls.translate compare --target vi    # split vs repair-while-translating
 ```
 
 And they compose as ordinary Unix processes — audio stages speak raw `f32le` PCM, text
 stages speak JSON Lines:
 
 ```bash
-python -m livesub.input mic --raw \
-  | python -m livesub.denoise run spectral --raw \
-  | python -m livesub.transcribe run faster_whisper --raw \
-  | python -m livesub.correct run ollama \
-  | python -m livesub.translate run ollama --target vi --text-only
+python -m lmls.input mic --raw \
+  | python -m lmls.denoise run spectral --raw \
+  | python -m lmls.transcribe run faster_whisper --raw \
+  | python -m lmls.correct run ollama \
+  | python -m lmls.translate run ollama --target vi --text-only
 ```
 
 Drop the correction stage from that pipe and the translator picks up the job:
 
 ```bash
-python -m livesub.input mic --raw \
-  | python -m livesub.transcribe run faster_whisper --raw \
-  | python -m livesub.translate run ollama --target vi --repair --text-only
+python -m lmls.input mic --raw \
+  | python -m lmls.transcribe run faster_whisper --raw \
+  | python -m lmls.translate run ollama --target vi --repair --text-only
 ```
 
 ---
@@ -268,7 +268,7 @@ studio serve --media-root .
 # Open http://127.0.0.1:8080
 ```
 
-Livesub Studio provides a typed node editor, TOML/JSON import and export, a resizable
+lmls studio provides a typed node editor, TOML/JSON import and export, a resizable
 subtitle monitor, interactive file playback with text overlays and automatic pause,
 and live startup/profiling/error diagnostics. Run locks the graph; Stop unlocks it.
 Seeking resets the processing generation and discards previous subtitles. The initial
@@ -301,11 +301,11 @@ The pipeline serves every subtitle event over a WebSocket (`ws://localhost:8765`
 
 ```bash
 # word error rate + latency, on a fixture so two configs are comparable
-python -m livesub bench -c config/default.toml \
+python -m lmls bench -c config/default.toml \
     --in assets/lecture.wav --reference assets/lecture.txt
 
 # under classroom babble at a known SNR
-python -m livesub bench -c config/default.toml \
+python -m lmls bench -c config/default.toml \
     --in assets/lecture.wav --reference assets/lecture.txt \
     --noise assets/classroom_noise.wav --snr 5
 ```
@@ -335,12 +335,12 @@ out  = "text.raw"
 or from the command line:
 
 ```bash
-python -m livesub run -c config/default.toml --transcribe mlx_whisper --translate mlx_llm_translator --correct mlx_llm_corrector
+python -m lmls run -c config/default.toml --transcribe mlx_whisper --translate mlx_llm_translator --correct mlx_llm_corrector
 ```
 
 (`config/mlx.toml` is exactly that, as a file.)
 
-Available everywhere: `python -m livesub list`
+Available everywhere: `python -m lmls list`
 
 | Module kind | Implementations |
 | --- | --- |
@@ -365,12 +365,12 @@ audio lives.
 
 ## Adding your own
 
-Subclass `Module` from `livesub/core/interfaces.py`, declare your port types, add one
-line to `livesub/core/registry.py`, name it in a config. Nothing else changes.
+Subclass `Module` from `lmls/core/interfaces.py`, declare your port types, add one
+line to `lmls/core/registry.py`, name it in a config. Nothing else changes.
 
 ```python
-from livesub.core.interfaces import Module
-from livesub.core.types import TextFrame
+from lmls.core.interfaces import Module
+from lmls.core.types import TextFrame
 
 class MyTranslator(Module):
     inputs  = {"text_in": TextFrame}
@@ -394,7 +394,7 @@ class MyTranslator(Module):
 | Symptom | Cause |
 | --- | --- |
 | Level meter never moves | Terminal lacks microphone permission (System Settings → Privacy & Security). |
-| `no input device matching ...` | Run `livesub devices`; match on any part of the name. |
+| `no input device matching ...` | Run `lmls devices`; match on any part of the name. |
 | PowerShell refuses `.venv\Scripts\Activate.ps1` ("running scripts is disabled") | `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`, then retry. |
 | `ffmpeg not found on PATH` (Windows) | `winget install ffmpeg`, reopen the terminal. |
 | dshow device not found (Windows) | The name must match *Settings → Sound → Playback* exactly, or use the short form `audio=0` with `-f dshow`; run `ffmpeg -list_devices true -f dshow -i dummy` to list names. |

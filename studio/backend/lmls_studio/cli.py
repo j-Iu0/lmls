@@ -1,4 +1,4 @@
-"""Command line entry point for the Livesub Studio backend."""
+"""Command line entry point for the lmls studio backend."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +11,7 @@ app = typer.Typer(add_completion=False)
 
 @app.callback()
 def main() -> None:
-    """Livesub Studio backend: local graph editor, subtitle monitor, and diagnostics."""
+    """lmls studio backend: local graph editor, subtitle monitor, and diagnostics."""
 
 
 @app.command()
@@ -26,7 +26,7 @@ def serve(
         from .server import create_app
     except ImportError as exc:
         raise typer.BadParameter("install studio dependencies with: pip install -e studio/backend") from exc
-    typer.echo(f"Livesub Studio: http://127.0.0.1:{port}")
+    typer.echo(f"lmls studio: http://127.0.0.1:{port}")
     aiohttp_web.run_app(create_app(config, media_root), host="127.0.0.1", port=port)
 
 

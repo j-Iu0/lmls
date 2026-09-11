@@ -1,6 +1,6 @@
 # Controlled media transport
 
-`livesub.input.media.ControlledMediaSource` is a general `Module` source,
+`lmls.input.media.ControlledMediaSource` is a general `Module` source,
 registered as `media`. It has no input ports and emits `AudioFrame` on its
 `audio` output. It accepts any seekable file or URL that the underlying
 `FfmpegSource` can decode. It does not control a player, UI, websocket protocol,
@@ -94,7 +94,7 @@ timestamp can land among much later decoded frames. The server/transport should
 remove that duration before lookup, then add it in media time:
 
 ```python
-from livesub.core.types import FRAME_SAMPLES, SAMPLE_RATE
+from lmls.core.types import FRAME_SAMPLES, SAMPLE_RATE
 
 frame_duration = FRAME_SAMPLES / SAMPLE_RATE
 media_end = source.media_time(utterance.t_end - frame_duration) + frame_duration
@@ -158,7 +158,7 @@ FFmpeg-dependent cases skip when the executable is unavailable. Pure unit tests
 cover registry resolution, clock validation, jitter, timestamp interpolation,
 monotonic corrections, and bounded retention under several decoding speeds.
 
-The implementation is contained in `livesub/input/media.py`. The only registry
-change is the `media` registration line in `livesub/core/registry.py`. This
+The implementation is contained in `lmls/input/media.py`. The only registry
+change is the `media` registration line in `lmls/core/registry.py`. This
 document and `tests/test_media.py` complete the change; UI ownership and session
 restart policy remain with the caller.

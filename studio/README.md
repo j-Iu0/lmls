@@ -1,4 +1,4 @@
-# livesub studio
+# lmls studio
 
 The node editor now connects to the existing Python HTTP/WebSocket service.
 Deno builds the frontend; Python runs the graph and serves the production files.

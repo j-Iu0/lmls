@@ -4,7 +4,7 @@
 # classroom babble (docs/architecture.md 2.2) says this is WORSE than default.toml at every
 # SNR tested -- it is here to be measured, not recommended.
 #
-#   livesub bench -c config/with_denoise.toml --in assets/lecture.wav \
+#   lmls bench -c config/with_denoise.toml --in assets/lecture.wav \
 #       --reference assets/lecture.txt --noise assets/classroom_noise.wav --snr 5
 
 [settings]

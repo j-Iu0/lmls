@@ -309,13 +309,13 @@ export function validate(doc: Document): string[] {
   return errors;
 }
 
-/** Only studio documents are accepted; this is not a livesub config decoder. */
+/** Only studio documents are accepted; this is not a lmls config decoder. */
 export function parseDocument(text: string): Document {
   const raw = JSON.parse(text);
   if (
     raw?.version !== 1 || typeof raw.name !== 'string' || !Array.isArray(raw.nodes) ||
     !Array.isArray(raw.edges)
-  ) throw new Error('Choose a livesub studio document (version 1).');
+  ) throw new Error('Choose a lmls studio document (version 1).');
   if (raw.nodes.length > 150 || raw.edges.length > 600) {
     throw new Error('Demo limit: 150 nodes and 600 connections.');
   }

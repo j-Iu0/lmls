@@ -11,16 +11,16 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from livesub.core.audioutil import align, load_wav, mix_at_snr, rms, snr_db
-from livesub.core.codec import event_from_dict, event_to_dict
-from livesub.core.registry import (
+from lmls.core.audioutil import align, load_wav, mix_at_snr, rms, snr_db
+from lmls.core.codec import event_from_dict, event_to_dict
+from lmls.core.registry import (
     MissingDependency,
     UnknownImplementation,
     available,
     build,
     resolve,
 )
-from livesub.core.types import (
+from lmls.core.types import (
     FRAME_SAMPLES,
     SAMPLE_RATE,
     AudioFrame,
@@ -28,7 +28,7 @@ from livesub.core.types import (
     TextFrame,
     Utterance,
 )
-from livesub.segment import make_segmenter
+from lmls.segment import make_segmenter
 
 pytestmark = pytest.mark.asyncio
 
@@ -134,7 +134,7 @@ def test_every_registered_name_resolves_to_an_importable_path():
     someone selects that implementation."""
     import importlib
 
-    from livesub.core.registry import REGISTRY
+    from lmls.core.registry import REGISTRY
 
     for impl, path in REGISTRY.items():
         module_path, _, class_name = path.partition(":")
@@ -319,7 +319,7 @@ def test_a_short_blip_is_ignored():
 
 async def test_energy_segmenter_module_wraps_the_inner_segmenter():
     """The pipeline node: AudioFrame in, zero or more Utterances out, drain() at EOS."""
-    from livesub.core.registry import resolve
+    from lmls.core.registry import resolve
 
     node_cls = resolve("energy")
     assert node_cls.inputs == {"audio": AudioFrame}
@@ -341,7 +341,7 @@ async def test_energy_segmenter_module_wraps_the_inner_segmenter():
 
 
 async def test_segmenter_module_drain_matches_inner_close():
-    from livesub.core.registry import resolve
+    from lmls.core.registry import resolve
 
     pcm = load_wav(LECTURE)[: SAMPLE_RATE * 4]
     node = resolve("energy")()
@@ -355,7 +355,7 @@ async def test_segmenter_module_drain_matches_inner_close():
 
 def test_silero_defaults_to_the_torch_runtime(monkeypatch):
     """The ML requirements already install torch, so the default must not need ONNX."""
-    from livesub.segment.silero import _SileroSegmenterImpl
+    from lmls.segment.silero import _SileroSegmenterImpl
 
     requested: list[bool] = []
     fake_model = object()
@@ -372,7 +372,7 @@ def test_silero_defaults_to_the_torch_runtime(monkeypatch):
 
 
 def test_silero_explains_an_explicit_missing_onnx_runtime(monkeypatch):
-    from livesub.segment.silero import _SileroSegmenterImpl
+    from lmls.segment.silero import _SileroSegmenterImpl
 
     def missing_onnx(*, onnx: bool):
         assert onnx is True
@@ -426,7 +426,7 @@ async def test_llm_corrector_keeps_context_internally():
 
 
 def test_similarity_guard_rejects_a_hallucinated_rewrite():
-    from livesub.correct.mlx_llm import similarity
+    from lmls.correct.mlx_llm import similarity
 
     original = "gradient descent then adjusts every weight to make the loss smaller"
     assert similarity(original, "Gradient descent then adjusts every weight to make "

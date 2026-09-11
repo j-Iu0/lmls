@@ -3,9 +3,9 @@
 # because ffmpeg normalises whatever it is given to the same 16 kHz mono frames the
 # microphone produces.
 #
-#   livesub run --config config/video.toml                     # the url below
-#   livesub run --config config/video.toml --source "Background Music" --device
-#   livesub run --config config/video.toml --source lecture.mp4
+#   lmls run --config config/video.toml                     # the url below
+#   lmls run --config config/video.toml --source "Background Music" --device
+#   lmls run --config config/video.toml --source lecture.mp4
 
 [settings]
 target = "vi"

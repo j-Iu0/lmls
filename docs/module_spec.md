@@ -33,7 +33,7 @@ in the README. They are instances of the contract below, not part of it.
 ## 1. Pipeline Structure
 
 A pipeline is a **directed graph of nodes**. Each node wraps exactly one module — an
-instance of `livesub.core.Module` — and communicates with other nodes exclusively
+instance of `lmls.core.Module` — and communicates with other nodes exclusively
 through named **topics** on a shared **Bus** (§6).
 
 ```
@@ -73,7 +73,7 @@ display) is one configuration of this machinery.
 
 ## 2. Module Interface: Ports and Roles
 
-Every module subclasses `livesub.core.Module` and declares two class variables:
+Every module subclasses `lmls.core.Module` and declares two class variables:
 
 ```python
 class Module(ABC):
@@ -380,7 +380,7 @@ For `TextFrame` payloads the bus does two things at publish time:
 ## 7. Built-in Data Types
 
 The framework ships one family of payload types for its audio/captioning application.
-They live in `livesub.core.types` and are re-exported from `livesub.core`. They are
+They live in `lmls.core.types` and are re-exported from `lmls.core`. They are
 **one application, not the framework**: for other domains, define your own types
 (§2.5) and ignore this section.
 
@@ -483,15 +483,15 @@ the text represents; the frame carries no kind field.
 
 ## 8. Registering a Module
 
-`livesub.core.registry` maps `impl` names to classes, resolved lazily — importing
-`livesub` loads none of the implementations until one is actually built.
+`lmls.core.registry` maps `impl` names to classes, resolved lazily — importing
+`lmls` loads none of the implementations until one is actually built.
 
-Add one entry to `REGISTRY` in `livesub/core/registry.py`:
+Add one entry to `REGISTRY` in `lmls/core/registry.py`:
 
 ```python
 REGISTRY: dict[str, str] = {
     ...
-    "my_denoiser": "livesub.denoise.my_denoiser:MyDenoiser",
+    "my_denoiser": "lmls.denoise.my_denoiser:MyDenoiser",
 }
 ```
 
@@ -523,7 +523,7 @@ framework is audio-specific.
 ```python
 # mypkg/counter.py
 from collections.abc import AsyncIterator
-from livesub.core import Module
+from lmls.core import Module
 
 class CounterSource(Module):
     """Source: emits 0, 1, 2, ... then stops."""
@@ -538,7 +538,7 @@ class CounterSource(Module):
             yield i
 
 # mypkg/doubler.py
-from livesub.core import Module
+from lmls.core import Module
 
 class Doubler(Module):
     """Transform (1:1): sync process; the runner offloads it to an executor."""
@@ -550,7 +550,7 @@ class Doubler(Module):
 
 # mypkg/printer.py
 import sys
-from livesub.core import Module
+from lmls.core import Module
 
 class PrinterSink(Module):
     """Sink: owns its stdout output channel (constraint 4, §5)."""
@@ -567,7 +567,7 @@ class PrinterSink(Module):
 ### Step 2 — Register
 
 ```python
-# livesub/core/registry.py
+# lmls/core/registry.py
 REGISTRY: dict[str, str] = {
     ...
     "counter": "mypkg.counter:CounterSource",

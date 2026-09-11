@@ -4,9 +4,9 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-import livesub.cli.demo as demo_module
-from livesub.cli.__main__ import app
-from livesub.cli.demo import (
+import lmls.cli.demo as demo_module
+from lmls.cli.__main__ import app
+from lmls.cli.demo import (
     BackendChoice,
     BufferChoice,
     SourceChoice,
@@ -16,8 +16,8 @@ from livesub.cli.demo import (
     _selected_model,
     _startup_detail,
 )
-from livesub.core.graph import Graph
-from livesub.core.startup import StartupEvent, StartupPhase, StartupProgress
+from lmls.core.graph import Graph
+from lmls.core.startup import StartupEvent, StartupPhase, StartupProgress
 
 
 def build_demo(**overrides):
@@ -48,11 +48,11 @@ def test_top_level_version_option():
     result = CliRunner().invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "livesub 0.1.0"
+    assert result.output.strip() == "lmls 0.1.0"
 
     demo_result = CliRunner().invoke(app, ["demo", "--version"])
     assert demo_result.exit_code == 0
-    assert demo_result.output.strip() == "livesub 0.1.0"
+    assert demo_result.output.strip() == "lmls 0.1.0"
 
 
 def test_demo_graph_is_built_in_with_a_single_target():
