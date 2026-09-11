@@ -17,9 +17,9 @@ from typing import Any, ClassVar
 
 import pytest
 
-from livesub.core.graph import Graph
-from livesub.core.interfaces import Module
-from livesub.core.startup import (
+from lmls.core.graph import Graph
+from lmls.core.interfaces import Module
+from lmls.core.startup import (
     StartupEvent,
     StartupPhase,
     StartupProgress,
@@ -190,7 +190,7 @@ async def test_startup_progress_carried_in_event():
 
 def _make_graph(nodes, on_startup=None):
     """Build a minimal Graph from raw node dicts."""
-    from livesub.core.config import GraphConfig, _parse_node
+    from lmls.core.config import GraphConfig, _parse_node
 
     cfg = GraphConfig(
         nodes=[_parse_node(n, i) for i, n in enumerate(nodes)],
@@ -251,7 +251,7 @@ async def test_graph_no_callback_no_crash():
 @pytest.mark.asyncio
 async def test_graph_callback_receives_events_from_reporting_module():
     """A module that reports IN_PROGRESS + READY fires both events through the Graph."""
-    from livesub.core.registry import REGISTRY
+    from lmls.core.registry import REGISTRY
 
     REGISTRY["_reporting_src"] = (
         f"{_ReportingSource.__module__}:_ReportingSource"

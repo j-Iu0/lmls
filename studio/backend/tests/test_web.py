@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip('aiohttp')
 pytest.importorskip('tomli_w')
 from aiohttp.test_utils import TestClient, TestServer
-from livesub.core.types import Lineage, TextFrame, Utterance
+from lmls.core.types import Lineage, TextFrame, Utterance
 from lmls_studio.configuration import default_config, to_editor
 from lmls_studio.server import SESSION, create_app
 from lmls_studio.session import Session, SessionConflict
@@ -170,7 +170,7 @@ async def test_fast_final_before_upstream_observer_does_not_stall_auto_pause(cli
 
 
 async def test_empty_asr_result_releases_auto_pause_after_processing_settles(client, monkeypatch):
-    from livesub.transcribe.mock import MockTranscriber
+    from lmls.transcribe.mock import MockTranscriber
     started, release = asyncio.Event(), asyncio.Event()
     original = MockTranscriber.process
     async def empty_final(self, utterance):

@@ -1,4 +1,4 @@
-"""Transport-neutral editor documents over livesub's existing config format."""
+"""Transport-neutral editor documents over lmls's existing config format."""
 from __future__ import annotations
 
 import copy
@@ -9,10 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from livesub.core.config import ConfigError, GraphConfig, config_from_dict, config_to_dict
-from livesub.core.graph import validate
-from livesub.core.registry import available, resolve, option_parameters
-from livesub.core.types import TextFrame
+from lmls.core.config import ConfigError, GraphConfig, config_from_dict, config_to_dict
+from lmls.core.graph import validate
+from lmls.core.registry import available, resolve, option_parameters
+from lmls.core.types import TextFrame
 
 
 def catalog() -> list[dict[str, Any]]:

@@ -1,4 +1,4 @@
-"""Loopback-only HTTP/WebSocket host for the local livesub workspace."""
+"""Loopback-only HTTP/WebSocket host for the local lmls workspace."""
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
-from livesub.core.config import load_config
+from lmls.core.config import load_config
 from .configuration import catalog, default_config, export_document, import_document, validate_editor
 from .session import ACTIVE, Session, SessionConflict
 
@@ -26,7 +26,7 @@ CLIENTS = web.AppKey('clients', set)
 class MediaLibrary:
     def __init__(self, root: Path):
         self.root = root.resolve()
-        self.temp = tempfile.TemporaryDirectory(prefix='livesub-media-')
+        self.temp = tempfile.TemporaryDirectory(prefix='lmls-media-')
         self.uploads = Path(self.temp.name).resolve()
 
     def path(self, value: str) -> Path:
@@ -217,7 +217,7 @@ def create_app(config_path: Path | None = None, media_root: Path | None = None) 
         loop = asyncio.get_running_loop()
         task = asyncio.create_task(broadcast(), name='web-snapshots')
         handler = RunLogHandler(level=logging.WARNING)
-        logger = logging.getLogger('livesub')
+        logger = logging.getLogger('lmls')
         logger.addHandler(handler)
         try:
             yield

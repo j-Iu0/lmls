@@ -9,10 +9,10 @@ import wave
 import numpy as np
 import pytest
 
-from livesub.core.interfaces import Module
-from livesub.core.registry import build, resolve
-from livesub.core.types import FRAME_SAMPLES, SAMPLE_RATE, AudioFrame
-from livesub.input.media import (
+from lmls.core.interfaces import Module
+from lmls.core.registry import build, resolve
+from lmls.core.types import FRAME_SAMPLES, SAMPLE_RATE, AudioFrame
+from lmls.input.media import (
     ControlledMediaSource,
     _MAX_TIMESTAMPS,
     _RECENT_FRAMES,

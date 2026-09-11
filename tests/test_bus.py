@@ -12,8 +12,8 @@ import asyncio
 import numpy as np
 import pytest
 
-from livesub.core.bus import Bus, RingBuffer
-from livesub.core.types import AudioFrame, Lineage, TextFrame, Utterance
+from lmls.core.bus import Bus, RingBuffer
+from lmls.core.types import AudioFrame, Lineage, TextFrame, Utterance
 
 pytestmark = pytest.mark.asyncio
 

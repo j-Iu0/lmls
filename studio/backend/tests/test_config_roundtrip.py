@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from livesub.core.config import config_from_dict, config_to_dict, load_config
-from livesub.core.registry import resolve
+from lmls.core.config import config_from_dict, config_to_dict, load_config
+from lmls.core.registry import resolve
 from lmls_studio.configuration import export_document, from_editor, import_document, to_editor
 
 REPO = Path(__file__).resolve().parents[3]
@@ -42,7 +42,7 @@ def test_serializer_does_not_alias_options():
 
 def test_toml_omits_semantically_default_null_but_explains_other_nulls():
     pytest.importorskip('tomli_w')
-    from livesub.core.config import ConfigError
+    from lmls.core.config import ConfigError
     doc = to_editor(load_config(REPO / 'config/mock.toml'))
     asr = next(n for n in doc['nodes'] if n['impl'] == 'mock_transcriber')
     asr['options']['script'] = None

@@ -9,14 +9,14 @@ from dataclasses import replace
 import pytest
 import numpy as np
 
-from livesub.core.bus import Bus
-from livesub.core.config import GraphConfig, NodeConfig
-from livesub.core.graph import Graph
-from livesub.core.interfaces import Module
-from livesub.core.metrics import Metrics
-from livesub.core.registry import REGISTRY
-from livesub.core.startup import StartupPhase
-from livesub.core.types import AudioFrame, Lineage, TextFrame, Utterance
+from lmls.core.bus import Bus
+from lmls.core.config import GraphConfig, NodeConfig
+from lmls.core.graph import Graph
+from lmls.core.interfaces import Module
+from lmls.core.metrics import Metrics
+from lmls.core.registry import REGISTRY
+from lmls.core.startup import StartupPhase
+from lmls.core.types import AudioFrame, Lineage, TextFrame, Utterance
 
 
 class Source(Module):
@@ -387,7 +387,7 @@ async def test_executor_queue_wait_is_not_processing_time(make_graph, monkeypatc
     release = threading.Event()
     entered, submitted = asyncio.Event(), asyncio.Event()
     clock = [0.0]
-    monkeypatch.setattr("livesub.core.graph.time.perf_counter", lambda: clock[0])
+    monkeypatch.setattr("lmls.core.graph.time.perf_counter", lambda: clock[0])
     real_executor = loop.run_in_executor
 
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -461,7 +461,7 @@ async def test_stop_failure_does_not_skip_other_resources(make_graph):
 
 def test_metrics_bound_samples_keep_lifetime_counts_mean_max_and_ignore_lineage(monkeypatch):
     metrics = Metrics(max_samples=3)
-    monkeypatch.setattr("livesub.core.types.time.time", lambda: 100.0)
+    monkeypatch.setattr("lmls.core.types.time.time", lambda: 100.0)
     for i in range(10):
         metrics.record_stage("work", i)
         metrics.record_event(TextFrame("hi", lineage=Lineage(

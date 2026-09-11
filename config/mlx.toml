@@ -5,8 +5,8 @@
 # Requires macOS on Apple Silicon; everything is downloaded into ~/.cache/huggingface on
 # first run (~0.5 GB Whisper, ~3.1 GB Qwen3.5-4B 4-bit) and runs offline after that.
 #
-#   livesub run --config config/mlx.toml
-#   livesub graph --config config/mlx.toml --mermaid
+#   lmls run --config config/mlx.toml
+#   lmls graph --config config/mlx.toml --mermaid
 
 [settings]
 target = "vi"
@@ -16,7 +16,7 @@ target = "vi"
 name = "mic"
 impl = "mic"
 out = "audio.raw"
-device = "default"      # `livesub devices` lists them; "Background Music" = system audio
+device = "default"      # `lmls devices` lists them; "Background Music" = system audio
 
 # ── noise reduction (OPTIONAL -- and OFF here, on purpose) ─────────────────────
 # Measured worse than no denoising at every SNR tested; see docs/architecture.md 2.2.

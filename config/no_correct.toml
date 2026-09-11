@@ -5,7 +5,7 @@
 #
 # Portable wiring: faster-whisper ASR, Ollama LLM (see config/default.toml for setup).
 #
-#   livesub run --config config/no_correct.toml
+#   lmls run --config config/no_correct.toml
 
 [settings]
 target = "vi"

@@ -1,7 +1,7 @@
 # Everything runs, nothing is downloaded. Used by CI, and by anyone who wants to see the
 # pipeline and the display behaviour before committing to a multi-gigabyte model.
 #
-#   livesub run --config config/mock.toml
+#   lmls run --config config/mock.toml
 
 [settings]
 target = "vi"

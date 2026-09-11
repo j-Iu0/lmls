@@ -6,7 +6,7 @@
 # NOTE: this preset uses the MLX implementation, so it requires Apple Silicon. The
 # portable Ollama counterpart (impl = "fused_ollama") is what config/default.toml runs.
 #
-#   livesub run --config config/fused.toml
+#   lmls run --config config/fused.toml
 
 [settings]
 target = "vi"

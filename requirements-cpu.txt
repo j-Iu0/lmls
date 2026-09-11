@@ -4,6 +4,6 @@
 # machine.
 #   ollama pull qwen3.5:4b                          # the server side (outside the venv)
 #   .venv/bin/pip install -r requirements-cpu.txt
-#   .venv/bin/python -m livesub run -c config/default.toml
+#   .venv/bin/python -m lmls run -c config/default.toml
 faster-whisper==1.2.1   # transcribe impl "faster_whisper"
 ollama>=0.5             # correct/translate impl "ollama"

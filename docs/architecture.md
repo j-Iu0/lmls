@@ -52,7 +52,7 @@ Read the fan-out off that diagram: `text.corrected` has **two** subscribers, `vi
 
 ### Why a bus, and why per-subscriber queues
 
-`livesub/core/bus.py`. Each subscriber gets **its own queue**. This is the single most
+`lmls/core/bus.py`. Each subscriber gets **its own queue**. This is the single most
 important implementation decision in the project.
 
 With one shared queue per topic, the translator and the display would compete for events,
@@ -99,12 +99,12 @@ time; no module ever sets it.
 ### Independence, concretely
 
 Every module package (`input`, `denoise`, `segment`, `transcribe`, `correct`, `translate`,
-`sink`) imports from `livesub.core` and nothing else inside `livesub`. All modules share
+`sink`) imports from `lmls.core` and nothing else inside `lmls`. All modules share
 one base class (`Module`) and declare their interfaces through **port type annotations**
 rather than role-specific ABCs — so what a node does is visible from the types it reads
 and writes, not from its position in a class hierarchy. Only `core/graph.py` instantiates
 modules together, and it does so through a registry of dotted-path strings — so `import
-livesub` never pulls in MLX, torch, or an HTTP client, and a missing optional dependency
+lmls` never pulls in MLX, torch, or an HTTP client, and a missing optional dependency
 surfaces when you select that implementation, as an instruction:
 
 ```
@@ -140,13 +140,13 @@ lecture-desk distance and needs no setup, but it is omnidirectional and picks up
 room. A wireless lapel or a USB cardioid on the lecturer is substantially better at the
 back of a classroom, because the improvement comes from a better SNR *at the source*,
 which no amount of downstream noise reduction can match. The system supports either
-without code changes; `livesub devices` lists what is attached.
+without code changes; `lmls devices` lists what is attached.
 
 **System audio.** A virtual loopback device (Background Music, or BlackHole) appears as an
 ordinary input, which is how a video call or a playing video is captioned:
 
 ```bash
-livesub run -c config/video.toml --source "Background Music" --device
+lmls run -c config/video.toml --source "Background Music" --device
 ```
 
 ### 2.2 Noise handling
@@ -232,9 +232,9 @@ noise) is mixed into clean speech at an exact SNR, so every row above ran on
 byte-identical audio:
 
 ```bash
-python -m livesub.denoise mix-noise --speech a.wav --noise b.wav --snr 5 --out noisy.wav
-python -m livesub.denoise compare --speech assets/lecture.wav --noise assets/classroom_noise.wav --snr 5
-livesub bench -c config/with_denoise.toml --in assets/lecture.wav \
+python -m lmls.denoise mix-noise --speech a.wav --noise b.wav --snr 5 --out noisy.wav
+python -m lmls.denoise compare --speech assets/lecture.wav --noise assets/classroom_noise.wav --snr 5
+lmls bench -c config/with_denoise.toml --in assets/lecture.wav \
     --reference assets/lecture.txt --noise assets/classroom_noise.wav --snr 5
 ```
 
@@ -293,7 +293,7 @@ utterances and calls its model once per utterance, with no knowledge of how the 
 chunked. This separation of concerns means segmenter and transcriber can be swapped
 independently: a different VAD algorithm is one `impl =` change.
 
-The default is an adaptive energy + spectral-flatness detector (`livesub/segment/energy.py`)
+The default is an adaptive energy + spectral-flatness detector (`lmls/segment/energy.py`)
 with **no extra dependency**. Absolute energy thresholds fail in a classroom because level
 depends on distance from the microphone; this tracks the noise floor and decides on the
 *ratio*, and requires spectral peakiness as well as loudness so door slams and keyboard
@@ -308,7 +308,7 @@ was wrong:
 
 > "A neural network is made of **a neural network.**" … "The result is that the neuron **is not a**"
 
-Two changes fixed it, and both are in `livesub/segment/base.py`:
+Two changes fixed it, and both are in `lmls/segment/base.py`:
 
 * silence threshold **220 ms** — reliably above intra-phrase gaps (~100–150 ms), reliably
   below inter-sentence ones;
@@ -483,11 +483,11 @@ utterances, so the LLM is called more often and queues behind itself.
 Results for every wiring are produced by:
 
 ```bash
-livesub bench -c config/fused.toml     --in assets/lecture.wav --reference assets/lecture.txt
-livesub bench -c config/no_correct.toml --in assets/lecture.wav --reference assets/lecture.txt
-livesub bench -c config/default.toml   --in assets/lecture.wav --reference assets/lecture.txt \
+lmls bench -c config/fused.toml     --in assets/lecture.wav --reference assets/lecture.txt
+lmls bench -c config/no_correct.toml --in assets/lecture.wav --reference assets/lecture.txt
+lmls bench -c config/default.toml   --in assets/lecture.wav --reference assets/lecture.txt \
     --noise assets/classroom_noise.wav --snr 5
-livesub bench -c config/with_denoise.toml --in assets/lecture.wav --reference assets/lecture.txt \
+lmls bench -c config/with_denoise.toml --in assets/lecture.wav --reference assets/lecture.txt \
     --noise assets/classroom_noise.wav --snr 5
 ```
 
