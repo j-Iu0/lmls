@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 logs/
 .bench_noisy.wav
 .pytest_cache/
@@ -9,4 +10,4 @@ logs/
 .assets
 studio/node_modules/
 studio/dist/
-livesub/web/studio/
+studio/backend/lmls_studio/studio/

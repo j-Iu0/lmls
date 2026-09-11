@@ -301,22 +301,6 @@ def list_impls() -> None:
         typer.echo(f"  {name}")
 
 
-@app.command()
-def web(
-    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Initial graph TOML."),
-    port: int = typer.Option(8080, min=1, max=65535, help="Local web port."),
-    media_root: Path = typer.Option(Path.cwd(), help="Directory containing playable media files."),
-) -> None:
-    """Open the local graph editor, subtitle monitor, and live diagnostics."""
-    try:
-        from aiohttp import web as aiohttp_web
-        from ..web.server import create_app
-    except ImportError as exc:
-        raise typer.BadParameter("install web dependencies with: pip install -e '.[web]'") from exc
-    typer.echo(f"Livesub Studio: http://127.0.0.1:{port}")
-    aiohttp_web.run_app(create_app(config, media_root), host="127.0.0.1", port=port)
-
-
 from .bench import register as _register_bench  # noqa: E402
 from .demo import register as _register_demo  # noqa: E402
 

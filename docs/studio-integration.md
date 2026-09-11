@@ -18,10 +18,11 @@ flight and at most one pending update per source. Snapshots use WebSocket.
 - The web catalog consumes that shared registry introspection. The frontend owns
   labels, primary/advanced grouping and optional slider presentation hints. No
   processing option is renamed or translated into an invented demo setting.
-- The web host serves the generated SPA index and hashed assets. Setuptools
-  includes that directory when a wheel is built after `deno task build`. Missing
-  builds return an explicit setup message. The existing loopback, origin, media
-  scope and CSP protections are unchanged.
+- The web host (`lmls_studio`, packaged under `studio/backend`) serves the
+  generated SPA index and hashed assets. Setuptools includes that directory when
+  a wheel is built after `deno task build`. Missing builds return an explicit
+  setup message. The existing loopback, origin, media scope and CSP protections
+  are unchanged.
 
 No changes were needed to inference, clocks, queue behavior, epoch handling,
 metrics collection, or subtitle production for this integration.

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 const target = 'http://127.0.0.1:8080';
 export default defineConfig({
   plugins: [react()],
-  build: { outDir: '../livesub/web/studio', emptyOutDir: true },
+  build: { outDir: 'backend/lmls_studio/studio', emptyOutDir: true },
   server: {
     host: '127.0.0.1',
     port: 5173,

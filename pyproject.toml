@@ -12,12 +12,6 @@ dynamic = ["dependencies"]
 [project.scripts]
 livesub = "livesub.cli.__main__:app_main"
 
-[project.optional-dependencies]
-web = ["aiohttp>=3.12,<4", "tomli-w>=1.2,<2"]
-
-[tool.setuptools.package-data]
-"livesub.web" = ["studio/index.html", "studio/assets/*"]
-
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
 

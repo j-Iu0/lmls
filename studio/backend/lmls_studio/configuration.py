@@ -9,10 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from ..core.config import ConfigError, GraphConfig, config_from_dict, config_to_dict
-from ..core.graph import validate
-from ..core.registry import available, resolve, option_parameters
-from ..core.types import TextFrame
+from livesub.core.config import ConfigError, GraphConfig, config_from_dict, config_to_dict
+from livesub.core.graph import validate
+from livesub.core.registry import available, resolve, option_parameters
+from livesub.core.types import TextFrame
 
 
 def catalog() -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 """Forwarded options remain usable by any config tool without constructing a module."""
 from livesub.core.registry import option_parameters, resolve
-from livesub.web.configuration import catalog
+from lmls_studio.configuration import catalog
 
 
 def test_segmenters_expose_real_forwarded_options():
