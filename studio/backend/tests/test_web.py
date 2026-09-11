@@ -11,11 +11,11 @@ pytest.importorskip('aiohttp')
 pytest.importorskip('tomli_w')
 from aiohttp.test_utils import TestClient, TestServer
 from livesub.core.types import Lineage, TextFrame, Utterance
-from livesub.web.configuration import default_config, to_editor
-from livesub.web.server import SESSION, create_app
-from livesub.web.session import Session, SessionConflict
+from lmls_studio.configuration import default_config, to_editor
+from lmls_studio.server import SESSION, create_app
+from lmls_studio.session import Session, SessionConflict
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 async def wait_state(session, states):
@@ -250,7 +250,7 @@ async def test_optional_translator_socket_does_not_steal_default_output(client):
 
 
 async def test_serves_built_studio_assets_and_reports_missing_build(client, tmp_path, monkeypatch):
-    from livesub.web import server
+    from lmls_studio import server
     monkeypatch.setattr(server, 'STUDIO', tmp_path)
     missing = await client.get('/')
     assert missing.status == 503

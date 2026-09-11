@@ -262,9 +262,9 @@ python -m livesub.input mic --raw \
 ### Local graph editor
 
 ```bash
-pip install -e '.[web]'
+pip install -e . -e studio/backend
 cd studio && deno install && deno task build && cd ..
-python -m livesub web
+studio serve --media-root .
 # Open http://127.0.0.1:8080
 ```
 

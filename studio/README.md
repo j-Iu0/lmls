@@ -6,16 +6,17 @@ Deno builds the frontend; Python runs the graph and serves the production files.
 From the repository root:
 
 ```sh
+pip install -e . -e studio/backend
 cd studio
 deno install
 deno task build
 cd ..
-.venv/bin/python -m livesub.cli web --media-root .
+studio serve --media-root .
 ```
 
 Open http://127.0.0.1:8080. Build before packaging a wheel: generated assets are
-included in `livesub.web` package data. A missing build returns setup instructions.
-The old static frontend remains in the repository but is no longer the index page.
+included in the `lmls_studio` (studio/backend) package data. A missing build returns
+setup instructions.
 
 For development, keep Python running on port 8080 and run `deno task dev` in
 `studio/`. Vite on port 5173 proxies `/api`, media, and WebSockets to Python.

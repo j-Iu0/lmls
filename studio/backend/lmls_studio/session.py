@@ -11,13 +11,13 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from ..core.codec import event_to_dict
-from ..core.config import GraphConfig
-from ..core.graph import Graph
-from ..core.registry import resolve
-from ..core.startup import StartupEvent
-from ..core.types import AudioFrame, TextFrame, Utterance
-from ..input.media import ControlledMediaSource
+from livesub.core.codec import event_to_dict
+from livesub.core.config import GraphConfig
+from livesub.core.graph import Graph
+from livesub.core.registry import resolve
+from livesub.core.startup import StartupEvent
+from livesub.core.types import AudioFrame, TextFrame, Utterance
+from livesub.input.media import ControlledMediaSource
 from .configuration import from_editor, to_editor, validate_editor
 
 ACTIVE = {"starting", "running", "seeking", "stopping"}

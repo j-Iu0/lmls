@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
-from ..core.config import load_config
+from livesub.core.config import load_config
 from .configuration import catalog, default_config, export_document, import_document, validate_editor
 from .session import ACTIVE, Session, SessionConflict
 
