@@ -36,21 +36,23 @@ export function SubtitleDock(
     [following, setFollowing] = useState(true);
   const feed = useRef<HTMLDivElement>(null);
   const rows = s.captions;
-  // Every published text endpoint of the pipeline, grouped by producing node.
-  // Port names are scoped by module, so labels pair each node with its ports.
-  // Observed endpoints are merged in so a caption whose node left the draft
-  // stays filterable. The media sources' overlay picker uses the same list.
+  // Text output ports of the draft's nodes, grouped by producing node. Port
+  // names are scoped by module, so labels pair each node with its ports. The
+  // media sources' overlay picker uses the same list.
   const endpoints = new Map<string, string[]>();
-  const addEndpoint = (node: string, port: string) => {
-    const ports_ = endpoints.get(node) ?? [];
-    if (!ports_.includes(port)) endpoints.set(node, [...ports_, port]);
-  };
-  for (const e of textEndpoints(document)) addEndpoint(e.node, e.port);
-  for (const row of rows) {
-    if (row.port) addEndpoint(row.producer, row.port);
+  for (const e of textEndpoints(document)) {
+    const ports_ = endpoints.get(e.node) ?? [];
+    if (!ports_.includes(e.port)) endpoints.set(e.node, [...ports_, e.port]);
   }
+  // Selections follow the listed endpoints so a removed node's rows leave the
+  // feed instead of lingering without their checkbox.
+  const ids = new Set<string>();
+  for (const [node, portNames] of endpoints) {
+    for (const port of portNames) ids.add(`${node}:${port}`);
+  }
+  const active = picked.filter((id) => ids.has(id));
   const groups = new Map<string, Caption[]>();
-  for (const row of rows.filter((row) => picked.includes(`${row.producer}:${row.port ?? ''}`))) {
+  for (const row of rows.filter((row) => active.includes(`${row.producer}:${row.port ?? ''}`))) {
     const key = `${row.source}:${row.segment ?? row.start}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
@@ -167,10 +169,10 @@ export function SubtitleDock(
                     <label key={port}>
                       <input
                         type='checkbox'
-                        checked={picked.includes(id)}
+                        checked={active.includes(id)}
                         onChange={(e) =>
                           setPicked(
-                            e.target.checked ? [...picked, id] : picked.filter((p) => p !== id),
+                            e.target.checked ? [...active, id] : active.filter((p) => p !== id),
                           )}
                       />
                       {port}
@@ -203,7 +205,7 @@ export function SubtitleDock(
                   : 'Listening for the next segment…'}
               </span>
               <small>
-                {picked.length
+                {active.length
                   ? 'Original text, translations, and every revision.'
                   : 'Enable an endpoint to see its subtitles.'}
               </small>
