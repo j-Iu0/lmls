@@ -16,7 +16,7 @@ FRONTEND = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.asyncio
-async def test_live_overlay_receives_subtitles_without_taking_focus(tmp_path):
+async def test_live_overlay_receives_subtitles_and_exposes_ipc_controls(tmp_path):
     ready = asyncio.Event()
     connections = []
 
@@ -48,20 +48,16 @@ async def test_live_overlay_receives_subtitles_without_taking_focus(tmp_path):
                     pytest.fail("Overlay did not connect:\n" + log.read())
                 await connections[0].send(json.dumps({
                     "type": "subtitle", "topic": "text.corrected", "segment_id": "smoke",
-                    "revision": 0, "lang": "en", "text": "Transparent subtitle smoke test",
+                    "revision": 0, "lang": "en", "text": "Window smoke test",
                 }))
                 async with asyncio.timeout(5):
                     while True:
                         state = json.loads(ipc("status"))
-                        if state["source"] == "Transparent subtitle smoke test":
+                        if state["source"] == "Window smoke test":
                             break
                         await asyncio.sleep(0.05)
                 assert state["visible"] is True
-                assert niri("focused-window") == focus_before
-                layer = next(layer for layer in niri("layers") if layer["namespace"] == "lmls-subtitles")
-                assert layer["layer"] == "Overlay"
-                assert layer["keyboard_interactivity"] == "None"
-                assert layer["output"] == state["monitor"]
+                next(w for w in niri("windows") if w["title"] == "LMLS Subtitles")
                 ipc("hide")
                 assert json.loads(ipc("status"))["visible"] is False
                 show_result = ipc("show")

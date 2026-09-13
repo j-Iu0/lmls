@@ -10,6 +10,9 @@ Item {
     property int minimumHeight: 260
     property int maximumWidth: 1600
     property int maximumHeight: 1000
+    property int sourceFontSize: 28
+    property int translationFontSize: 32
+    property real backgroundOpacity: 0.78
     signal quitRequested()
     signal moveRequested()
     signal resizeRequested(var edges)
@@ -73,6 +76,9 @@ Item {
         sourceText: root.sourceText
         translationText: root.translationText
         history: root.history
+        sourceFontSize: root.sourceFontSize
+        translationFontSize: root.translationFontSize
+        backingOpacity: root.backgroundOpacity
     }
 
     MouseArea {
