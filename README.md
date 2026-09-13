@@ -279,6 +279,13 @@ See [the Studio guide](studio/README.md) for controls and development checks, an
 [the integration notes](docs/studio-integration.md) for the backend API, media and
 seek semantics, and justification for every runtime extension.
 
+### Quickshell subtitle window
+
+On Wayland, the [Quickshell subtitle window](frontends/quickshell/README.md) is a
+standalone translucent floating window showing bilingual captions with a history
+view, source/translation toggles, and drag/resize controls. It connects directly
+to the WebSocket below and is tested on niri.
+
 ### Existing WebSocket sink
 
 The pipeline serves every subtitle event over a WebSocket (`ws://localhost:8765` in
