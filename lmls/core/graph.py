@@ -505,23 +505,35 @@ class Graph:
             await asyncio.gather(*pumps, return_exceptions=True)
 
     async def _process(
-        self, node: BuiltNode, payload: Any, is_async: bool
+        self, node: BuiltNode, payload: Any, is_async: bool, topic: str | None = None
     ) -> tuple[Any, float]:
         elapsed = 0.0
         invoked = False
+        process_with_topic = (
+            getattr(node.stage, "process_with_topic", None) if topic is not None else None
+        )
 
         def process_sync():
             nonlocal elapsed, invoked
             invoked = True
             t0 = time.perf_counter()
             try:
+                if process_with_topic:
+                    return process_with_topic(payload, topic)
                 return node.stage.process(payload)
             finally:
                 elapsed = time.perf_counter() - t0
 
         self._in_flight[node.config.name] += 1
         try:
-            if is_async:
+            if process_with_topic:
+                invoked = True
+                t0 = time.perf_counter()
+                try:
+                    result = await process_with_topic(payload, topic)
+                finally:
+                    elapsed = time.perf_counter() - t0
+            elif is_async:
                 invoked = True
                 t0 = time.perf_counter()
                 try:
@@ -632,13 +644,14 @@ class Graph:
 
     async def _run_sink(self, node: BuiltNode) -> None:
         stage = node.stage
-        is_async = inspect.iscoroutinefunction(stage.process)
+        process_with_topic = getattr(stage, "process_with_topic", None)
+        is_async = inspect.iscoroutinefunction(process_with_topic or stage.process)
         lock = asyncio.Lock()  # serialise writes; sinks render shared state
 
         async def pump(sub) -> None:
             async for payload in sub:
                 async with lock:
-                    await self._process(node, payload, is_async)
+                    await self._process(node, payload, is_async, topic=sub.topic)
 
         await self._join_pumps([
             asyncio.create_task(pump(sub)) for sub in node.subscriptions

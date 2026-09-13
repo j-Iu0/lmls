@@ -8,13 +8,13 @@ receives the same event stream the terminal sink renders, and implements the sam
 Wire protocol, one JSON object per message::
 
     {"type": "subtitle",
-     "segment_id": "u0007", "revision": 2, "kind": "translated",
+     "segment_id": "u0007", "revision": 2, "topic": "text.out",
      "lang": "vi", "text": "...", "is_final": true,
      "t_audio_end": 1756...,  "t_emit": 1756..., "end_to_end_ms": 2140,
      "stage_latency_ms": {"asr": 310, "fused_llm": 980}, "meta": {...}}
 
 Client rule, the whole of it: keep a block per ``segment_id``; on each message, if
-``revision`` is greater than or equal to the revision already held for that ``kind``,
+``revision`` is greater than or equal to the revision already held for that topic/language,
 replace that line and leave every other block alone.
 
 A late joiner gets the last ``replay`` events on connect, so a page refreshed mid-lecture
@@ -98,7 +98,13 @@ class WebSocketSink(Module):
             self._server = None
 
     async def process(self, frame: TextFrame) -> None:
+        """Standalone use has no topic; preserve the original wire format."""
+        await self.process_with_topic(frame, None)
+
+    async def process_with_topic(self, frame: TextFrame, topic: str | None) -> None:
         payload = {"type": "subtitle", **event_to_dict(frame)}
+        if topic is not None:
+            payload["topic"] = topic
         self._history.append(payload)
         if not self._clients:
             return

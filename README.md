@@ -285,12 +285,12 @@ The pipeline serves every subtitle event over a WebSocket (`ws://localhost:8765`
 `config/default.toml`). A UI subscribes and applies one rule:
 
 > Keep a block per `segment_id`. When a message arrives whose `revision` is greater than
-> or equal to the one held for that `segment_id` on this topic, replace that line. Leave
-> every other block alone. The topic the event arrived on tells you what the text
-> represents (raw ASR, corrected English, translation).
+> or equal to the one held for that `segment_id` on this topic and language, replace that
+> line. Leave every other block alone. The topic the event arrived on tells you what the
+> text represents (raw ASR, corrected English, translation).
 
 ```json
-{"type": "subtitle", "segment_id": "u0007", "revision": 2,
+{"type": "subtitle", "topic": "text.out", "segment_id": "u0007", "revision": 2,
  "lang": "vi", "text": "...", "is_final": true, "end_to_end_ms": 2140,
  "stage_latency_ms": {"asr": 310, "fused_llm": 980}}
 ```

@@ -33,6 +33,10 @@ class Module(ABC):
     * ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding
       payloads for its output port(s).
     * ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.
+      A sink that needs provenance may additionally implement
+      ``process_with_topic(frame, topic)``; the graph calls it instead of ``process``.
+      Both sync and async methods are supported. Topic names remain configuration,
+      and the frame itself is unchanged.
     * both non-empty -- a **transform**; implements ``process`` returning a single
       payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a
       ``list`` for the single output port (1-to-list).

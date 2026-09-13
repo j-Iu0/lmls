@@ -1,0 +1,49 @@
+# Run from the repository root. No models, microphone, or audio playback required.
+#   python -m lmls run -c frontends/quickshell/mock.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "src"
+impl = "wav"
+out = "audio.raw"
+path = "assets/lecture.wav"
+realtime = true
+
+[[node]]
+name = "vad"
+impl = "energy"
+in = "audio.raw"
+out = "utterance.speech"
+
+[[node]]
+name = "asr"
+impl = "mock_transcriber"
+in = "utterance.speech"
+out = "text.raw"
+
+[[node]]
+name = "fix"
+impl = "rules"
+in = "text.raw"
+out = "text.corrected"
+
+[[node]]
+name = "vi"
+impl = "mock_translator"
+in = "text.corrected"
+out = { text_out = "text.out" }
+target = "vi"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = ["text.raw", "text.corrected", "text.out"]
+
+[[node]]
+name = "ws"
+impl = "websocket_server"
+in = ["text.raw", "text.corrected", "text.out"]
+host = "127.0.0.1"
+port = 8765
