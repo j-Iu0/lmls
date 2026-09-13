@@ -28,6 +28,23 @@ TestCase {
         compare(panel.color.a, 0.5);
     }
 
+    function test_source_and_translation_toggles() {
+        var sourceToggle = findChild(panel, "sourceToggle");
+        var translationToggle = findChild(panel, "translationToggle");
+        verify(sourceToggle.checked);
+        verify(translationToggle.checked);
+        mouseClick(sourceToggle);
+        verify(!panel.showSource);
+        verify(!findChild(panel, "liveSource").visible);
+        verify(findChild(panel, "liveTranslation").visible);
+        mouseClick(translationToggle);
+        verify(!panel.showTranslation);
+        verify(!findChild(panel, "liveTranslation").visible);
+        mouseClick(sourceToggle);
+        verify(panel.showSource);
+        verify(findChild(panel, "liveSource").visible);
+    }
+
     function test_history() {
         mouseClick(findChild(panel, "historyButton"));
         compare(panel.viewingHistory, true);

@@ -11,6 +11,8 @@ Rectangle {
     property int sourceFontSize: 28
     property int translationFontSize: 32
     property real backingOpacity: 0.78
+    property bool showSource: true
+    property bool showTranslation: true
     color: Qt.rgba(0.045, 0.075, 0.10, backingOpacity)
     radius: 14
     border.color: "#60748b9b"
@@ -46,6 +48,20 @@ Rectangle {
                 Layout.fillWidth: true
             }
             OverlayButton {
+                objectName: "sourceToggle"
+                text: "Source"
+                checkable: true
+                checked: root.showSource
+                onClicked: root.showSource = checked;
+            }
+            OverlayButton {
+                objectName: "translationToggle"
+                text: "Translation"
+                checkable: true
+                checked: root.showTranslation
+                onClicked: root.showTranslation = checked;
+            }
+            OverlayButton {
                 objectName: "historyButton"
                 text: root.viewingHistory ? "Return to live" : "History · " + entries.count
                 checked: root.viewingHistory
@@ -68,6 +84,7 @@ Rectangle {
                 Text {
                     objectName: "liveSource"
                     width: parent.width
+                    visible: root.showSource && text.length > 0
                     text: root.sourceText
                     color: "#f1f5f8"
                     textFormat: Text.PlainText
@@ -78,6 +95,7 @@ Rectangle {
                 Text {
                     objectName: "liveTranslation"
                     width: parent.width
+                    visible: root.showTranslation && text.length > 0
                     text: root.translationText
                     color: "#ffe9a6"
                     textFormat: Text.PlainText
