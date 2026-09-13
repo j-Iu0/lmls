@@ -4,6 +4,7 @@ import QtWebSockets
 import ".." as Overlay
 
 TestCase {
+    visible: true
     id: testCase
     name: "SubtitleStream"
     property var peer: null

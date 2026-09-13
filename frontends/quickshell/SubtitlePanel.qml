@@ -8,7 +8,10 @@ Rectangle {
     property string translationText: ""
     property var history: []
     property bool viewingHistory: false
-    color: Qt.rgba(0.045, 0.075, 0.10, 0.78)
+    property int sourceFontSize: 28
+    property int translationFontSize: 32
+    property real backingOpacity: 0.78
+    color: Qt.rgba(0.045, 0.075, 0.10, backingOpacity)
     radius: 14
     border.color: "#60748b9b"
     border.width: 1
@@ -69,16 +72,17 @@ Rectangle {
                     color: "#f1f5f8"
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
-                    font.pixelSize: 28
+                    font.pixelSize: root.sourceFontSize
                     horizontalAlignment: Text.AlignHCenter
                 }
                 Text {
+                    objectName: "liveTranslation"
                     width: parent.width
                     text: root.translationText
                     color: "#ffe9a6"
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
-                    font.pixelSize: 32
+                    font.pixelSize: root.translationFontSize
                     horizontalAlignment: Text.AlignHCenter
                 }
                 Text {

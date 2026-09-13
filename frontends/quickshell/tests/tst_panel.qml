@@ -3,6 +3,7 @@ import QtTest
 import ".." as Overlay
 
 TestCase {
+    visible: true
     id: testCase
     name: "SubtitleControls"
     width: 1000
@@ -16,6 +17,15 @@ TestCase {
         sourceText: "Current source"
         translationText: "Bản dịch"
         history: [{segmentId: "one", source: "Earlier source", translation: "Trước đó"}]
+    }
+
+    function test_font_sizes_and_backing_opacity() {
+        panel.sourceFontSize = 20;
+        panel.translationFontSize = 26;
+        compare(findChild(panel, "liveSource").font.pixelSize, 20);
+        compare(findChild(panel, "liveTranslation").font.pixelSize, 26);
+        panel.backingOpacity = 0.5;
+        compare(panel.color.a, 0.5);
     }
 
     function test_history() {
