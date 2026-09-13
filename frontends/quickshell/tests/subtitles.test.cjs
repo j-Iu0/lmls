@@ -94,6 +94,27 @@ test('revisions are checked independently for each topic and language', () => {
 });
 
 
+test('history exposes the delay of the event whose text is displayed', () => {
+    const store = api.createStore(options);
+    store.receive(event({topic: 'text.raw', end_to_end_ms: 500}), 1000);
+    store.receive(event({topic: 'text.corrected', end_to_end_ms: 1200, text: 'Correct'}), 1100);
+    store.receive(event({topic: 'text.out', lang: 'vi', end_to_end_ms: 2500, text: 'Việt'}), 1200);
+    const rows = store.history();
+    assert.equal(rows[0].sourceDelay, 1200);
+    assert.equal(rows[0].translationDelay, 2500);
+    const view = store.view(1200);
+    assert.equal(view.sourceDelay, 1200);
+    assert.equal(view.translationDelay, 2500);
+});
+
+test('delay stays absent when the backend supplies none', () => {
+    const store = api.createStore(options);
+    store.receive(event(), 1000);
+    const row = store.history()[0];
+    assert.equal(row.sourceDelay, null);
+    assert.equal(row.translationDelay, null);
+});
+
 test('history retains expired captions in speech order and receives late corrections', () => {
     const store = api.createStore(options);
     store.receive(event({segment_id: 'u2', t_audio_end: 2, text: 'Second'}), 2000);

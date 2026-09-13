@@ -3,6 +3,8 @@ function createStore(options) {
     var blocks = new Map();
     var current = null;
 
+    // The event chosen by language and topic priority; its text and its own
+    // end-to-end delay are displayed together.
     function line(block, language, topics) {
         var candidates = Array.from(block.lines.values()).filter(function (event) {
             return event.lang === language;
@@ -14,7 +16,17 @@ function createStore(options) {
             }
             return rank(a.topic) - rank(b.topic);
         });
-        return candidates.length ? candidates[0].text : "";
+        return candidates[0] || null;
+    }
+
+    function text(block, language, topics) {
+        var chosen = block ? line(block, language, topics) : null;
+        return chosen ? chosen.text : "";
+    }
+
+    function delay(block, language, topics) {
+        var chosen = block ? line(block, language, topics) : null;
+        return chosen && Number.isFinite(chosen.end_to_end_ms) ? chosen.end_to_end_ms : null;
     }
 
     return {
@@ -22,8 +34,10 @@ function createStore(options) {
             return Array.from(blocks.values()).sort(function (a, b) { return a.time - b.time; })
                 .map(function (block) {
                     return {segmentId: block.id,
-                        source: line(block, options.sourceLanguage, options.sourceTopics),
-                        translation: line(block, options.targetLanguage, options.translationTopics)};
+                        source: text(block, options.sourceLanguage, options.sourceTopics),
+                    sourceDelay: delay(block, options.sourceLanguage, options.sourceTopics),
+                    translation: text(block, options.targetLanguage, options.translationTopics),
+                    translationDelay: delay(block, options.targetLanguage, options.translationTopics)};
                 });
         },
         size: function () { return blocks.size; },
@@ -64,11 +78,11 @@ function createStore(options) {
             var previous = block.lines.get(key);
             if (previous && event.revision < previous.revision)
                 return false;
-            var before = [line(block, options.sourceLanguage, options.sourceTopics),
-                line(block, options.targetLanguage, options.translationTopics)].join("\n");
+            var before = [text(block, options.sourceLanguage, options.sourceTopics),
+                text(block, options.targetLanguage, options.translationTopics)].join("\n");
             block.lines.set(key, event);
-            var after = [line(block, options.sourceLanguage, options.sourceTopics),
-                line(block, options.targetLanguage, options.translationTopics)].join("\n");
+            var after = [text(block, options.sourceLanguage, options.sourceTopics),
+                text(block, options.targetLanguage, options.translationTopics)].join("\n");
             if (before !== after)
                 block.updatedAt = Math.max(block.updatedAt,
                     event.t_emit ? Math.min(now, event.t_emit * 1000) : now);
@@ -79,8 +93,10 @@ function createStore(options) {
                 ? current : null;
             return {
                 segmentId: active ? active.id : "",
-                source: active ? line(active, options.sourceLanguage, options.sourceTopics) : "",
-                translation: active ? line(active, options.targetLanguage, options.translationTopics) : ""
+                source: text(active, options.sourceLanguage, options.sourceTopics),
+                sourceDelay: delay(active, options.sourceLanguage, options.sourceTopics),
+                translation: text(active, options.targetLanguage, options.translationTopics),
+                translationDelay: delay(active, options.targetLanguage, options.translationTopics)
             };
         }
     };
