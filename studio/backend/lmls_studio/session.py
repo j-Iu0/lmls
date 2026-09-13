@@ -60,8 +60,11 @@ class Session:
         cfg = from_editor(copy.deepcopy(self.config))
         # These file transports have identical AudioFrame ports. Preserve the saved
         # implementation/options; select the clocked adapter only for this web run.
+        # Live captures (avfoundation device, pulse system audio) have no file and
+        # no playback clock, so they keep their implementation unchanged.
         for n in cfg.active:
-            if n.impl in {"media", "wav", "ffmpeg"} and not n.options.get("device"):
+            if n.impl in {"media", "wav", "ffmpeg"} and not n.options.get("device") \
+                    and not n.options.get("pulse"):
                 raw = n.options.get("url") or n.options.get("path") or n.options.get("source")
                 if not raw:
                     raise ValueError(f"{n.name}: choose a media file first")

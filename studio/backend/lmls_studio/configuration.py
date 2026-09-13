@@ -24,15 +24,27 @@ def catalog() -> list[dict[str, Any]]:
             item.update(description=inspect.getdoc(cls) or "",
                         inputs={p: t.__name__ for p, t in cls.inputs.items()},
                         outputs={p: t.__name__ for p, t in cls.outputs.items()})
+            # An implementation may enumerate valid values for an option via an
+            # ``option_choices(name)`` classmethod, so editors can offer real
+            # devices instead of free-form text.
+            choices_for = getattr(cls, "option_choices", None)
             for name, param in option_parameters(cls).items():
                 default = None if param.default is inspect.Parameter.empty else param.default
                 try:
                     json.dumps(default)
                 except (TypeError, ValueError):
                     default = str(default)
-                item["options"].append({"name": name, "default": default,
-                                        "required": param.default is inspect.Parameter.empty,
-                                        "annotation": str(param.annotation)})
+                option = {"name": name, "default": default,
+                          "required": param.default is inspect.Parameter.empty,
+                          "annotation": str(param.annotation)}
+                if choices_for is not None:
+                    try:
+                        choices = choices_for(name)
+                    except Exception:
+                        choices = None
+                    if choices:
+                        option["choices"] = [str(c) for c in choices]
+                item["options"].append(option)
         except Exception as exc:
             item["error"] = str(exc)
         result.append(item)

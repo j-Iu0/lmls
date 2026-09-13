@@ -192,6 +192,76 @@ async def test_ffmpeg_source_normalises_to_the_same_format_as_the_microphone():
     assert float(np.max(np.abs(np.concatenate([f.pcm for f in frames])))) > 0.0
 
 
+def test_ffmpeg_pulse_defaults_to_the_output_monitor():
+    """pulse=True captures every application via the default sink's monitor."""
+    source = build("ffmpeg", name="sys", pulse=True)
+    cmd = source._build_command()
+    assert cmd[cmd.index("-f") + 1] == "pulse"
+    assert cmd[cmd.index("-i") + 1] == "@DEFAULT_MONITOR@"
+
+
+def test_ffmpeg_pulse_resolves_sink_substring_to_its_monitor(monkeypatch):
+    from lmls.input.ffmpeg_source import FfmpegSource
+
+    devices = [
+        {"kind": "source", "name": "alsa_input.usb-mic.mono-fallback", "monitor": False},
+        {"kind": "sink", "name": "alsa_output.usb-speakers.analog-stereo", "monitor": False},
+    ]
+    monkeypatch.setattr(FfmpegSource, "list_pulse_sources", lambda pactl="pactl": devices)
+    source = build("ffmpeg", name="sys", pulse="speakers")
+    cmd = source._build_command()
+    assert cmd[cmd.index("-i") + 1] == "alsa_output.usb-speakers.analog-stereo.monitor"
+
+
+def test_ffmpeg_pulse_unknown_name_raises_with_available_devices(monkeypatch):
+    from lmls.input.ffmpeg_source import FfmpegSource
+
+    devices = [{"kind": "sink", "name": "alsa_output.usb-speakers", "monitor": False}]
+    monkeypatch.setattr(FfmpegSource, "list_pulse_sources", lambda pactl="pactl": devices)
+    with pytest.raises(ValueError, match="alsa_output.usb-speakers"):
+        FfmpegSource._resolve_pulse("does-not-exist")
+
+
+def test_ffmpeg_pulse_passes_through_without_pactl(monkeypatch):
+    from lmls.input.ffmpeg_source import FfmpegSource
+
+    monkeypatch.setattr(FfmpegSource, "list_pulse_sources", lambda pactl="pactl": [])
+    assert FfmpegSource._resolve_pulse("@DEFAULT_MONITOR@") == "@DEFAULT_MONITOR@"
+
+
+def test_ffmpeg_pulse_off_round_trips_like_none():
+    """An editor's 'off' choice (False/'') must behave exactly like the default."""
+    from lmls.core.registry import resolve
+
+    cls = resolve("ffmpeg")
+    assert cls(pulse=False, url="clip.mp4").pulse is None
+    assert cls(pulse="", url="clip.mp4").pulse is None
+
+
+def test_ffmpeg_pulse_choices_list_monitor_and_real_sources(monkeypatch):
+    from lmls.input.ffmpeg_source import FfmpegSource
+
+    devices = [
+        {"kind": "source", "name": "alsa_output.speakers.monitor", "monitor": True},
+        {"kind": "source", "name": "alsa_input.mic", "monitor": False},
+    ]
+    monkeypatch.setattr(FfmpegSource, "list_pulse_sources", lambda pactl="pactl": devices)
+    choices = FfmpegSource.option_choices("pulse")
+    assert choices == ["monitor", "alsa_output.speakers.monitor", "alsa_input.mic"]
+    assert FfmpegSource.option_choices("url") is None
+
+
+def test_ffmpeg_pulse_needs_no_url():
+    from lmls.core.registry import resolve
+
+    cls = resolve("ffmpeg")
+    source = cls(pulse=True)
+    assert source.url is None
+    assert source.describe()["pulse"] is True
+    with pytest.raises(ValueError, match="needs 'url'"):
+        cls()
+
+
 # -- denoise -----------------------------------------------------------------
 
 

@@ -19,6 +19,10 @@ export function MediaSource({ model, locked }: { model: PipelineNode; locked: bo
   const [duration, durationChanged] = useState(0),
     [draft, setDraft] = useState<number | null>(null);
   const filePath = String(model.options.url ?? model.options.path ?? model.options.source ?? '');
+  const pulse = model.options.pulse;
+  const pulseLabel = pulse === true || pulse === 'monitor'
+    ? 'Default output · all applications'
+    : String(pulse);
   const local = filePath && !/^(https?|rtsp|rtmp):/.test(filePath) && !model.options.device;
   const url = local ? `/api/media?path=${encodeURIComponent(filePath)}` : undefined;
   const playing = s.connected && s.status === 'running' && clock && !clock.paused &&
@@ -80,7 +84,9 @@ export function MediaSource({ model, locked }: { model: PipelineNode; locked: bo
           : (
             <div className='preview-heading'>
               <FileAudio size={16} />
-              {model.options.device
+              {pulse
+                ? `System audio · ${pulseLabel}`
+                : model.options.device
                 ? 'Live device'
                 : filePath
                 ? 'Live stream'
@@ -88,16 +94,18 @@ export function MediaSource({ model, locked }: { model: PipelineNode; locked: bo
             </div>
           )}
       </div>
-      <div className='filename'>
-        <span title={filePath}>{filePath.split('/').at(-1) || 'No file selected'}</span>
-        <IconButton
-          label='Choose local media'
-          disabled={locked || uploading || !s.connected}
-          onClick={() => input.current?.click()}
-        >
-          <FolderOpen size={15} />
-        </IconButton>
-      </div>
+      {!pulse && (
+        <div className='filename'>
+          <span title={filePath}>{filePath.split('/').at(-1) || 'No file selected'}</span>
+          <IconButton
+            label='Choose local media'
+            disabled={locked || uploading || !s.connected}
+            onClick={() => input.current?.click()}
+          >
+            <FolderOpen size={15} />
+          </IconButton>
+        </div>
+      )}
       <input
         ref={input}
         hidden

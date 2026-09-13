@@ -6,6 +6,12 @@
 #   lmls run --config config/video.toml                     # the url below
 #   lmls run --config config/video.toml --source "Background Music" --device
 #   lmls run --config config/video.toml --source lecture.mp4
+#
+# On Linux with PipeWire, capture all application audio instead (no url needed):
+# replace the source options with
+#
+#   pulse = true                  # default output monitor -- hears every app
+#   pulse = "alsa_output.usb-...monitor"   # a specific sink/source via `pactl`
 
 [settings]
 target = "vi"

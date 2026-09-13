@@ -9,6 +9,8 @@ export interface Field {
   required?: boolean;
   default: Value;
   choices?: string[];
+  /** Display text per choice; the choice string itself is the stored value. */
+  labels?: Record<string, string>;
   min?: number;
   max?: number;
   step?: number | 'any';

@@ -1,4 +1,6 @@
 """Forwarded options remain usable by any config tool without constructing a module."""
+from unittest.mock import patch
+
 from lmls.core.registry import option_parameters, resolve
 from lmls_studio.configuration import catalog
 
@@ -13,6 +15,22 @@ def test_segmenters_expose_real_forwarded_options():
     assert silero['onnx'].default is False
     descriptions = {entry['impl']: entry for entry in catalog()}
     assert any(option['name'] == 'silence_ms' for option in descriptions['energy']['options'])
+
+
+def test_ffmpeg_pulse_option_offers_monitor_and_discovered_sources():
+    with patch('lmls.input.ffmpeg_source.FfmpegSource.list_pulse_sources',
+               return_value=[{'kind': 'source', 'name': 'alsa_output.spk.monitor',
+                              'monitor': True},
+                             {'kind': 'sink', 'name': 'alsa_output.spk',
+                              'monitor': False}]):
+        descriptions = {entry['impl']: entry for entry in catalog()}
+    pulse = next(
+        option for option in descriptions['ffmpeg']['options'] if option['name'] == 'pulse'
+    )
+    assert pulse['choices'] == ['monitor', 'alsa_output.spk.monitor']
+    # Options without an enumerator stay free-form.
+    assert all('choices' not in option
+               for option in descriptions['ffmpeg']['options'] if option['name'] != 'pulse')
 
 
 def test_explicit_options_override_forwarded_defaults():

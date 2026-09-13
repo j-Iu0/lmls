@@ -10,6 +10,7 @@ Run standalone::
     python -m lmls.input list-devices
     python -m lmls.input mic --seconds 5 --out clip.wav
     python -m lmls.input ffmpeg --url lecture.mp4 --out clip.wav
+    python -m lmls.input system --seconds 5 --out clip.wav   # all application audio
     python -m lmls.input mic --raw | ...
 """
 

@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip('aiohttp')
 pytest.importorskip('tomli_w')
 from aiohttp.test_utils import TestClient, TestServer
+from lmls.core.config import config_from_dict
 from lmls.core.types import Lineage, TextFrame, Utterance
 from lmls_studio.configuration import default_config, to_editor
 from lmls_studio.server import SESSION, create_app
@@ -22,6 +23,10 @@ async def wait_state(session, states):
     async with asyncio.timeout(5):
         while session.state not in states:
             await asyncio.sleep(.01)
+
+
+def media_path(value):
+    raise ValueError(f'media file not found: {value}')
 
 
 @pytest.fixture
@@ -58,6 +63,24 @@ async def test_server_rejects_outside_files_cross_origin_and_malformed_config(cl
     response = await client.post('/api/run', json={'config': {'nodes': 'bad'}})
     assert response.status == 400
     assert client.server.app[SESSION].state == 'idle'
+
+
+def test_pulse_capture_needs_no_media_file_but_a_bare_ffmpeg_source_still_does():
+    session = Session(config_from_dict({'node': [
+        {'name': 'src', 'impl': 'ffmpeg', 'out': 'audio.raw', 'pulse': 'monitor'},
+    ]}), media_path)
+    cfg = session._runtime_config({})
+    assert cfg.active[0].impl == 'ffmpeg'
+    assert cfg.active[0].options['pulse'] == 'monitor'
+    bare = Session(config_from_dict({'node': [
+        {'name': 'src', 'impl': 'ffmpeg', 'out': 'audio.raw'},
+    ]}), media_path)
+    try:
+        bare._runtime_config({})
+    except ValueError as exc:
+        assert 'choose a media file' in str(exc)
+    else:
+        raise AssertionError('a file-less ffmpeg source must still be rejected')
 
 
 async def test_run_locks_graph_streams_profiles_and_disconnect_stops(client):

@@ -1,8 +1,9 @@
 """Everything that is not a plain microphone, normalised through one ffmpeg subprocess.
 
-One adapter covers local video and audio files, HTTP/HLS/RTSP/RTMP stream URLs, and
-macOS ``avfoundation`` capture devices, because ffmpeg already solves demuxing, decoding,
-channel downmixing and resampling for all of them. The spec's "media and data
+One adapter covers local video and audio files, HTTP/HLS/RTSP/RTMP stream URLs,
+macOS ``avfoundation`` capture devices, and Linux PipeWire/PulseAudio capture,
+because ffmpeg already solves demuxing, decoding, channel downmixing and resampling
+for all of them. The spec's "media and data
 formats" question is answered here: whatever goes in, what comes out of this stage is
 always 16 kHz mono float32, identical to what the microphone produces, so no downstream
 module can tell the difference.
@@ -25,14 +26,23 @@ import numpy as np
 from ..core.interfaces import Module
 from ..core.types import FRAME_SAMPLES, SAMPLE_RATE, AudioFrame
 
+#: names that mean "record the default output monitor" (all application audio)
+_MONITOR_ALIASES = ("monitor", "default", "system")
+
 
 class FfmpegSource(Module):
     """Decode any ffmpeg-readable source to the canonical frame format.
 
     Args:
-        url: file path, stream URL, or -- with ``device=True`` -- an avfoundation audio
-            device name or index such as ``"Background Music"``.
+        url: file path or stream URL; with ``device=True`` an ``avfoundation`` audio
+            device name or index such as ``"Background Music"`` (macOS). Optional when
+            ``pulse`` is set.
         device: treat ``url`` as an ``avfoundation`` capture device (macOS).
+        pulse: capture system/application audio on Linux through PipeWire's PulseAudio
+            interface. ``True`` (or ``"monitor"``) records the default output monitor,
+            which hears *every application*. A string is resolved against ``pactl``:
+            first as a literal source name, then as a sink substring (a ``.monitor``
+            source is derived), then as a source substring.
         realtime: throttle file playback to wall-clock speed (``-re``). Ignored for
             devices and live network streams, which are inherently realtime.
         extra_args: raw ffmpeg arguments inserted before the input, for anything this
@@ -47,6 +57,7 @@ class FfmpegSource(Module):
         url: str | None = None,
         source: str | None = None,
         device: bool = False,
+        pulse: str | bool | None = None,
         realtime: bool = True,
         loop: bool = False,
         ffmpeg: str = "ffmpeg",
@@ -55,9 +66,12 @@ class FfmpegSource(Module):
     ):
         super().__init__()
         self.url = url or source
-        if not self.url:
+        # False/'' mean "not capturing system audio", exactly like None; that keeps
+        # editor round-trips (a select's empty choice) lossless through TOML export.
+        self.pulse = pulse or None
+        if not self.url and not self.pulse:
             raise ValueError("ffmpeg source needs 'url' (or 'source')")
-        self.device = device or _looks_like_device(self.url)
+        self.device = device or _looks_like_device(self.url or "")
         self.realtime = realtime
         self.loop = loop
         self.ffmpeg = ffmpeg
@@ -99,6 +113,84 @@ class FfmpegSource(Module):
         return [d for d in devices if d["kind"] == "audio"]
 
     @classmethod
+    def option_choices(cls, name: str) -> list[str] | None:
+        """Choices the editor offers for an option; ``None`` when free-form.
+
+        ``pulse`` lists the default-monitor alias plus every source the server can
+        see, so the studio can offer real devices instead of a blank text field.
+        """
+        if name != 'pulse':
+            return None
+        choices, seen = ['monitor'], {'monitor'}
+        for d in cls.list_pulse_sources():
+            # Sinks are skipped: each sink's ``.monitor`` source is already listed,
+            # and both names resolve to the same capture.
+            if d['kind'] == 'source' and d['name'] not in seen:
+                seen.add(d['name'])
+                choices.append(d['name'])
+        return choices
+
+    @staticmethod
+    def list_pulse_sources(pactl: str = "pactl") -> list[dict[str, Any]]:
+        """List PipeWire/PulseAudio sources and sinks via ``pactl`` (Linux).
+
+        Sinks are listed too because capturing an application's output means
+        recording the *monitor* source of the sink it plays into. Returns ``[]``
+        when ``pactl`` is unavailable (e.g. macOS), so callers can degrade quietly.
+        """
+        if shutil.which(pactl) is None:
+            return []
+        out: list[dict[str, Any]] = []
+        for kind, args in (
+            ("source", [pactl, "list", "sources", "short"]),
+            ("sink", [pactl, "list", "sinks", "short"]),
+        ):
+            proc = subprocess.run(args, capture_output=True, text=True)
+            for line in proc.stdout.splitlines():
+                cols = line.split("\t")
+                if len(cols) >= 2 and cols[1]:
+                    out.append(
+                        {
+                            "kind": kind,
+                            "name": cols[1],
+                            "monitor": cols[1].endswith(".monitor"),
+                        }
+                    )
+        return out
+
+    @classmethod
+    def _resolve_pulse(cls, name: str | bool, pactl: str = "pactl") -> str:
+        """Map a ``pulse`` option to a pulse source name.
+
+        The pulse server understands ``@DEFAULT_MONITOR@`` itself, so ``True`` needs
+        no lookup; a human-friendly substring only can be resolved when ``pactl`` is
+        present, and is passed through verbatim otherwise (ffmpeg will report the
+        failure with the server's own device list).
+        """
+        if name is True or str(name).lower() in _MONITOR_ALIASES:
+            return "@DEFAULT_MONITOR@"
+        name = str(name)
+        devices = cls.list_pulse_sources(pactl)
+        sources = [d["name"] for d in devices if d["kind"] == "source"]
+        sinks = [d["name"] for d in devices if d["kind"] == "sink"]
+        if name in sources:
+            return name
+        if not name.endswith(".monitor"):
+            for sink in sinks:
+                if name.lower() in sink.lower():
+                    return f"{sink}.monitor"
+        for src in sources:
+            if name.lower() in src.lower():
+                return src
+        if not devices:  # no pactl -- let the pulse server validate the name
+            return name
+        available = ", ".join(
+            f"{d['name']}{' (sink)' if d['kind'] == 'sink' else ''}"
+            for d in devices
+        )
+        raise ValueError(f"no pulse source matching {name!r}; have: {available}")
+
+    @classmethod
     def _resolve_device(cls, name: str, ffmpeg: str) -> str:
         """avfoundation wants ``:<audio-index>``; accept a human name too."""
         if name.startswith(":"):
@@ -119,7 +211,10 @@ class FfmpegSource(Module):
                 f"{self.ffmpeg!r} not found on PATH; install it with `brew install ffmpeg`"
             )
         cmd = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
-        if self.device:
+        if self.pulse:
+            cmd += self.extra_args + ["-f", "pulse", "-i",
+                                      self._resolve_pulse(self.pulse)]
+        elif self.device:
             cmd += ["-f", "avfoundation", "-i",
                     self._resolve_device(str(self.url), self.ffmpeg)]
         else:
@@ -191,6 +286,7 @@ class FfmpegSource(Module):
             "stage": "FfmpegSource",
             "name": self.name,
             "url": self.url,
+            "pulse": self.pulse or None,
             "device": self.device,
             "realtime": self.realtime,
         }

@@ -88,11 +88,30 @@ def list_devices(
         typer.echo("\navfoundation audio devices (use with: input ffmpeg --device):")
         for d in FfmpegSource.list_devices():
             typer.echo(f"  [{d['index']}] {d['name']}")
-    typer.echo(
-        "\nTip: a virtual device such as 'Background Music' or 'BlackHole' carries "
-        "system audio,\nwhich is how you caption a video call or a playing video "
-        "instead of the room."
-    )
+    pulse = None
+    try:
+        from .ffmpeg_source import FfmpegSource
+
+        pulse = FfmpegSource.list_pulse_sources()
+    except Exception:  # pragma: no cover - listing must never break the command
+        pulse = []
+    if pulse:
+        typer.echo("\nPipeWire/PulseAudio sources (use with: input system --source NAME):")
+        for d in pulse:
+            label = "sink (use its .monitor)" if d["kind"] == "sink" else "source"
+            mark = " *monitor" if d["monitor"] else ""
+            typer.echo(f"  {d['name']}  [{label}]{mark}")
+        typer.echo(
+            "\nTip: 'input system' with no --source records the default output monitor,\n"
+            "which hears every application -- that is how you caption a video call or\n"
+            "a playing video instead of the room."
+        )
+    else:
+        typer.echo(
+            "\nTip: a virtual device such as 'Background Music' or 'BlackHole' carries "
+            "system audio,\nwhich is how you caption a video call or a playing video "
+            "instead of the room."
+        )
 
 
 @app.command()
@@ -124,6 +143,24 @@ def ffmpeg(
 
     source = FfmpegSource(url=url, device=device, realtime=realtime)
     asyncio.run(_drain(source, seconds or None, out, raw, quiet=raw))
+
+
+@app.command()
+def system(
+    source: Optional[str] = typer.Option(
+        None,
+        help="PipeWire/PulseAudio source or sink name; default is the output "
+        "monitor, which hears every application.",
+    ),
+    seconds: float = typer.Option(0.0, help="Stop after N seconds; 0 means run forever."),
+    out: Optional[Path] = typer.Option(None, help="Write a wav file here."),
+    raw: bool = typer.Option(False, help="Emit f32le PCM on stdout for piping."),
+) -> None:
+    """Capture system/application audio via PipeWire's pulse interface (Linux)."""
+    from .ffmpeg_source import FfmpegSource
+
+    src = FfmpegSource(pulse=source or True)
+    asyncio.run(_drain(src, seconds or None, out, raw, quiet=raw))
 
 
 @app.command()

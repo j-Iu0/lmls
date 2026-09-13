@@ -89,7 +89,7 @@ export function FieldControl(
             {current !== null && !field.choices?.includes(String(current)) && (
               <option>{String(current)}</option>
             )}
-            {field.choices?.map((c) => <option key={c}>{c}</option>)}
+            {field.choices?.map((c) => <option key={c} value={c}>{field.labels?.[c] ?? c}</option>)}
           </select>
         )
         : field.type === 'range'
