@@ -33,7 +33,9 @@ Deno.test('creating a connected node is atomic, preserves the drop position and 
 
 Deno.test('input-origin creation wires backwards; incompatible or locked edits change nothing', () => {
   commands.lock(false);
-  commands.replace(example());
+  const doc = example();
+  doc.edges = doc.edges.filter((edge) => edge.target !== 'asr');
+  commands.replace(doc);
   assert(
     addConnected('segmenter', { x: 20, y: 30 }, { node: 'asr', direction: 'target' }) === null,
   );

@@ -130,8 +130,6 @@ export function installCatalog(entries: CatalogEntry[]) {
       backend: true,
       inputs,
       outputs,
-      input,
-      output,
       role,
       color: colors[role],
       error: entry.error,
@@ -159,12 +157,23 @@ function publishedOutputs(doc: Document): Map<string, Record<string, string>> {
   for (const n of doc.nodes) {
     const topics: Record<string, string> = { ...(n.raw?.outputs ?? {}) };
     for (const edge of doc.edges.filter((e) => e.source === n.id)) {
-      const port = edge.sourceHandle ?? Object.keys(catalog[n.kind].outputs ?? {})[0];
+      const port = edge.sourceHandle;
       topics[port] ??= edge.topic ?? `${n.name}.${port}`;
     }
     outputs.set(n.id, topics);
   }
   return outputs;
+}
+
+function publisherIndex(nodes: BackendNode[]): Map<string, { node: string; port: string }> {
+  const publishers = new Map<string, { node: string; port: string }>();
+  for (const node of nodes) {
+    for (const [port, topic] of Object.entries(node.outputs)) {
+      if (publishers.has(topic)) throw new Error(`Topic ${topic} has more than one publisher.`);
+      publishers.set(topic, { node: node.name, port });
+    }
+  }
+  return publishers;
 }
 
 /** Text endpoints, identified exactly like the subtitle monitor's rows. Every
@@ -197,12 +206,7 @@ export function textEndpoints(doc: Document): {
   return result;
 }
 export function fromBackend(config: BackendConfig): Document {
-  const publishers = new Map<string, { node: string; port: string }[]>();
-  for (const n of config.nodes) {
-    for (const [port, topic] of Object.entries(n.outputs)) {
-      publishers.set(topic, [...(publishers.get(topic) ?? []), { node: n.name, port }]);
-    }
-  }
+  const publishers = publisherIndex(config.nodes);
   const edges: Wire[] = [];
   const positions = config.editor.positions as Record<string, { x: number; y: number }> | undefined;
   const overlays = (config.editor.overlays ?? {}) as Record<string, Value>;
@@ -210,17 +214,17 @@ export function fromBackend(config: BackendConfig): Document {
   const nodes = config.nodes.map((n, index): PipelineNode => {
     if (!catalog[n.impl]) throw new Error(`Unknown implementation: ${n.impl}`);
     const unwiredInputs: Record<string, string> = {};
-    const inputKeys = Object.keys(catalog[n.impl].inputs ?? {});
     for (const [port, topic] of Object.entries(n.inputs)) {
-      const from = publishers.get(topic) ?? [];
-      if (!from.length) unwiredInputs[port] = topic;
-      for (const p of from) {
+      const publisher = publishers.get(topic);
+      if (!publisher) {
+        unwiredInputs[port] = topic;
+      } else {
         edges.push({
-          id: `${p.node}:${p.port}:${n.name}:${port}`,
-          source: p.node,
-          sourceHandle: p.port,
+          id: `${publisher.node}:${publisher.port}:${n.name}:${port}`,
+          source: publisher.node,
+          sourceHandle: publisher.port,
           target: n.name,
-          targetHandle: inputKeys.length === 1 ? inputKeys[0] : port,
+          targetHandle: port,
           topic,
         });
       }
@@ -324,31 +328,15 @@ export function toBackend(doc: Document): BackendConfig {
   const outputs = publishedOutputs(doc);
   result.nodes = doc.nodes.map((n) => {
     const inputs = { ...n.unwiredInputs };
-    // Preserve original fan-in aliases and ordering when the wiring is unchanged.
     const incoming = doc.edges.filter((e) => e.target === n.id);
-    const byPort = new Map<string, string[]>();
     for (const e of incoming) {
       const upstream = outputs.get(e.source)!;
-      const source = doc.nodes.find((n) => n.id === e.source)!;
-      const topic = upstream[e.sourceHandle ?? Object.keys(catalog[source.kind].outputs ?? {})[0]];
-      const port = e.targetHandle ?? Object.keys(catalog[n.kind].inputs ?? {})[0];
-      byPort.set(port, [...new Set([...(byPort.get(port) ?? []), topic])]);
-    }
-    for (const [port, topics] of byPort) {
-      const original = Object.entries(n.raw?.inputs ?? {}).filter(([key, t]) =>
-        topics.includes(t) &&
-        (Object.keys(catalog[n.kind].inputs ?? {}).length === 1 || key === port)
-      );
-      const used = new Set<string>();
-      for (const [key, topic] of original) {
-        inputs[key] = topic;
-        used.add(topic);
+      const topic = upstream[e.sourceHandle];
+      const port = e.targetHandle;
+      if (inputs[port] !== undefined && inputs[port] !== topic) {
+        throw new Error(`Input ${n.name}.${port} has more than one topic.`);
       }
-      for (const topic of topics.filter((t) => !used.has(t))) {
-        let key = port, i = 0;
-        while (inputs[key] !== undefined) key = `${port}_${i++}`;
-        inputs[key] = topic;
-      }
+      inputs[port] = topic;
     }
     return {
       ...n.raw,
@@ -361,6 +349,7 @@ export function toBackend(doc: Document): BackendConfig {
       options: structuredClone(n.options),
     };
   });
+  publisherIndex(result.nodes);
   const textTopics = new Set(
     result.nodes.filter((n) => n.enabled).flatMap((n) =>
       Object.entries(n.outputs).filter(([p]) => catalog[n.impl].outputs?.[p] === 'text').map((
@@ -368,29 +357,6 @@ export function toBackend(doc: Document): BackendConfig {
       ) => t)
     ),
   );
-  // Bus topics are broadcasts. Reject a drawing that pretends to disconnect just
-  // one publisher while another publisher still feeds the same subscribed topic.
-  for (const n of result.nodes) {
-    const id = doc.nodes.find((node) => node.name === n.name)!.id;
-    for (const topic of Object.values(n.inputs)) {
-      for (
-        const publisher of result.nodes.filter((p) => Object.values(p.outputs).includes(topic))
-      ) {
-        const upstream = doc.nodes.find((node) => node.name === publisher.name)!;
-        if (
-          !doc.edges.some((e) =>
-            e.source === upstream.id && e.target === id &&
-            outputs.get(e.source)
-                ?.[e.sourceHandle ?? Object.keys(catalog[upstream.kind].outputs ?? {})[0]] === topic
-          )
-        ) {
-          throw new Error(
-            `Topic ${topic} is shared by several publishers. Disconnect the entire topic, or give the publishers distinct topics in the config.`,
-          );
-        }
-      }
-    }
-  }
   // Auto pause needs an attached text output; drop it when its overlay did not survive.
   const overlays = Object.fromEntries(
     doc.nodes

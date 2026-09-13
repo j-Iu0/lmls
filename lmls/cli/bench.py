@@ -100,16 +100,29 @@ def _retarget(cfg: GraphConfig, audio: Path, realtime: bool) -> GraphConfig:
     )
     from ..core.config import _parse_node
 
+    collect_ports = list(resolve("collect").inputs)
+    if len(text_topics) > len(collect_ports):
+        raise ValueError(
+            f"collect declares {len(collect_ports)} input ports but the benchmark "
+            f"found {len(text_topics)} text topics"
+        )
     cfg.nodes.append(
         _parse_node(
-            {"name": "_collect", "impl": "collect", "in": text_topics},
+            {"name": "_collect", "impl": "collect",
+             "in": dict(zip(collect_ports, text_topics))},
             len(cfg.nodes),
         )
     )
     if asr_topics:
+        if len(asr_topics) > len(collect_ports):
+            raise ValueError(
+                f"collect declares {len(collect_ports)} input ports but the benchmark "
+                f"found {len(asr_topics)} ASR topics"
+            )
         cfg.nodes.append(
             _parse_node(
-                {"name": "_collect_raw", "impl": "collect", "in": asr_topics},
+                {"name": "_collect_raw", "impl": "collect",
+                 "in": dict(zip(collect_ports, asr_topics))},
                 len(cfg.nodes) + 1,
             )
         )

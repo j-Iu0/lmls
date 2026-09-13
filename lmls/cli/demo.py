@@ -180,9 +180,9 @@ def _demo_config(
     )
 
     sink_inputs = {
-        "text": "text.raw",
-        "text_0": "text.corrected",
-        "text_1": "text.translation",
+        "raw": "text.raw",
+        "corrected": "text.corrected",
+        "translated": "text.translation",
     }
     nodes.append(
         NodeConfig(

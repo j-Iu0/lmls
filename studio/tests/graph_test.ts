@@ -20,21 +20,44 @@ function rejects(action: () => void) {
   assert(rejected, 'Expected invalid document to be rejected');
 }
 
-Deno.test('typed connections permit text fan-in but reject wrong types, duplicates and cycles', () => {
+Deno.test('typed connections enforce one topic per input and allow topic fan-out', () => {
   const doc = example();
   assert(validate(doc).length === 0);
   doc.nodes.push(makeNode('output', 'output', { x: 0, y: 0 }));
-  assert(connectionError(doc, 'source', 'asr') !== null);
-  assert(connectionError(doc, 'source', 'vad') !== null);
-  assert(connectionError(doc, 'asr', 'asr') !== null);
+  assert(connectionError(doc, 'source', 'asr', 'out', 'in') !== null);
+  assert(connectionError(doc, 'source', 'vad', 'out', 'in') !== null);
+  assert(connectionError(doc, 'asr', 'asr', 'out', 'in') !== null);
   const extra = makeNode('translator', 'second', { x: 0, y: 0 });
   doc.nodes.push(extra);
-  assert(connectionError(doc, 'translate', 'second') === null);
-  doc.edges.push({ id: 'translation-chain', source: 'translate', target: 'second' });
-  assert(connectionError(doc, 'second', 'translate') !== null);
+  assert(connectionError(doc, 'translate', 'second', 'out', 'in') === null);
+  doc.edges.push({
+    id: 'translation-chain',
+    source: 'translate',
+    sourceHandle: 'out',
+    target: 'second',
+    targetHandle: 'in',
+  });
+  assert(connectionError(doc, 'second', 'translate', 'out', 'in') !== null);
   assert(
-    connectionError(doc, 'second', 'output') === null,
-    'Output must allow multiple text publishers',
+    connectionError(doc, 'second', 'output', 'out', 'in') === null,
+    'An unused input accepts one matching topic',
+  );
+  doc.edges.push({
+    id: 'second-output',
+    source: 'second',
+    sourceHandle: 'out',
+    target: 'output',
+    targetHandle: 'in',
+  });
+  assert(
+    connectionError(doc, 'translate', 'output', 'out', 'in') !== null,
+    'An input accepts one topic',
+  );
+  const otherOutput = makeNode('output', 'other-output', { x: 0, y: 0 });
+  doc.nodes.push(otherOutput);
+  assert(
+    connectionError(doc, 'second', 'other-output', 'out', 'in') === null,
+    'One output topic may feed multiple inputs',
   );
 });
 
@@ -49,8 +72,17 @@ Deno.test('document roundtrip preserves field values and positions; malformed do
   const invalid = structuredClone(doc);
   invalid.nodes[1].options.threshold = 'not a number';
   rejects(() => parseDocument(JSON.stringify(invalid)));
+  const implicit = JSON.parse(JSON.stringify(doc));
+  delete implicit.edges[0].sourceHandle;
+  rejects(() => parseDocument(JSON.stringify(implicit)));
   const cycle = structuredClone(doc);
-  cycle.edges.push({ id: 'bad', source: 'output', target: 'source' });
+  cycle.edges.push({
+    id: 'bad',
+    source: 'output',
+    sourceHandle: 'out',
+    target: 'source',
+    targetHandle: 'in',
+  });
   rejects(() => parseDocument(JSON.stringify(cycle)));
 });
 

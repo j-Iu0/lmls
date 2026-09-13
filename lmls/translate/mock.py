@@ -50,7 +50,6 @@ class MockTranslator(Module):
     """
 
     inputs: ClassVar[dict[str, type]] = {"text_in": TextFrame}
-    default_output = "text_out"
     outputs: ClassVar[dict[str, type]] = {
         "text_out": TextFrame,
         "corrected": TextFrame,
@@ -81,7 +80,7 @@ class MockTranslator(Module):
 
     async def process(
         self, frame: TextFrame
-    ) -> TextFrame | dict[str, TextFrame] | None:
+    ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None
         if self.delay_ms:
@@ -109,12 +108,14 @@ class MockTranslator(Module):
 
         if frame.is_final:
             self._context.append(frame.text)
-        return replace(
-            frame,
-            text=self._render(frame.text, self.target),
-            lang=self.target,
-            meta={**frame.meta, "mock": True, "repair_mode": False},
-        )
+        return {
+            "text_out": replace(
+                frame,
+                text=self._render(frame.text, self.target),
+                lang=self.target,
+                meta={**frame.meta, "mock": True, "repair_mode": False},
+            )
+        }
 
     def describe(self) -> dict[str, Any]:
         return {

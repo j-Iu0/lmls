@@ -115,7 +115,7 @@ errors are reported without skipping remaining stages. Driver `start()` followed
 by `run()` remains supported; a closed graph is single-use because its bus streams
 have terminated. Construct a new graph for another run.
 
-Transform and sink fan-in pumps are explicitly cancelled and joined when a sibling
+Multi-input transform and sink pumps are explicitly cancelled and joined when a sibling
 fails or their runner is cancelled. Plain `gather()` does not cancel siblings on
 an exception. Source async generators are explicitly closed. Running synchronous
 workers are joined before stopping their stage: Python cannot forcibly interrupt
@@ -190,7 +190,7 @@ Observers that forward events must bound their own queues or histories.
 `tests/test_observability.py` exercises ordered lifecycle notifications, loop-thread
 callbacks, original startup reporting, exact stamped payload identity, real
 processing counts, callback failures, partial startup failure/cancellation,
-concurrent close during startup, repeated cancellation during stop, fan-in sibling
+concurrent close during startup, repeated cancellation during stop, multi-input sibling
 cleanup, full-queue abort, synchronous worker ownership and queue-excluded timing,
 drain/`None` counts, deadline versus service timeouts, stop failures, detached safe
 snapshots, ring drops/depth, and bounded samples with lifetime aggregates.
@@ -204,16 +204,13 @@ direct utterance/text sources, payload field preservation, and opt-out behavior.
 Existing startup, bus, graph wiring, and module tests provide regression coverage
 for warm-up, delivery, fan-out, revision stamping, and module integration.
 
-## Default output ports
+## Named multi-output results
 
-`Module.default_output` optionally names the destination of a bare result from a
-multi-output module. The mock, MLX, and cloud translators declare `text_out`:
-faithful translation already returns a bare `TextFrame` in these adapters, while
-repair mode returns named outputs. The editor exposes both ports, revealing that
-the old runner selected the alphabetically first **topic** for a bare result.
-Connecting or renaming an optional correction topic could therefore redirect a
-translation to that socket. The declaration fixes routing without changing the
-standalone adapters' return types. An unconnected default output drops that
-result, just like an unconnected named dictionary output. Other multi-output
-modules must return named outputs when multiple topics are wired, or explicitly
-declare a default. Single-output modules keep their existing behavior.
+A module with multiple output ports must return a dictionary keyed by its declared
+port names. The mock, MLX, and cloud translators therefore return `text_out`
+explicitly in faithful mode, just as repair mode already returns `corrected` and
+`text_out`. There is no default-output fallback that can silently redirect a bare
+result when an optional socket is connected or renamed. Returning an undeclared
+port is an error; returning a declared but unwired port drops that output. A
+single-output module may still return a bare payload because its declared port is
+unambiguous.

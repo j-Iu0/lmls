@@ -40,7 +40,7 @@ deno task build
 - Options, enabled state and queue policy are edited on nodes. Advanced options
   expand in place. Modules use the backend's real constructor names and ports.
 - The hamburger menu opens/saves executable TOML or JSON, validates, and creates
-  a new graph. Unknown options, extension settings, disabled nodes and fan-in
+  a new graph. Unknown options, extension settings, disabled nodes and exact port
   mappings survive import/export. Layout is saved in `[editor.positions]`.
 - Run validates and locks configuration. File sources start paused: press Play
   source to begin. Media time comes from the browser, not a simulated timer.

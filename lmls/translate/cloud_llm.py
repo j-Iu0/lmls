@@ -35,7 +35,6 @@ log = logging.getLogger("lmls.translate.cloud")
 
 class CloudLlmTranslator(Module):
     inputs: ClassVar[dict[str, type]] = {"text_in": TextFrame}
-    default_output = "text_out"
     outputs: ClassVar[dict[str, type]] = {
         "text_out": TextFrame,
         "corrected": TextFrame,
@@ -109,7 +108,7 @@ class CloudLlmTranslator(Module):
 
     async def process(
         self, frame: TextFrame
-    ) -> TextFrame | dict[str, TextFrame] | None:
+    ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None
 
@@ -143,12 +142,14 @@ class CloudLlmTranslator(Module):
 
         if not translation:
             return None
-        return replace(
-            frame,
-            lang=self.target,
-            text=translation,
-            meta={**frame.meta, "source_text": frame.text, "repair_mode": False},
-        )
+        return {
+            "text_out": replace(
+                frame,
+                lang=self.target,
+                text=translation,
+                meta={**frame.meta, "source_text": frame.text, "repair_mode": False},
+            )
+        }
 
     def describe(self) -> dict[str, Any]:
         info: dict[str, Any] = {"module": "CloudLlmTranslator", "name": self.name,

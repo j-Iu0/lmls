@@ -60,7 +60,6 @@ class MlxLlmTranslator(Module):
     """
 
     inputs: ClassVar[dict[str, type]] = {"text_in": TextFrame}
-    default_output = "text_out"
     outputs: ClassVar[dict[str, type]] = {
         "text_out": TextFrame,
         "corrected": TextFrame,
@@ -133,7 +132,7 @@ class MlxLlmTranslator(Module):
 
     async def process(
         self, frame: TextFrame
-    ) -> TextFrame | dict[str, TextFrame] | None:
+    ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None
 
@@ -168,12 +167,14 @@ class MlxLlmTranslator(Module):
         if not translation:
             log.warning("no translation produced for %r", frame.text[:60])
             return None
-        return replace(
-            frame,
-            lang=self.target,
-            text=translation,
-            meta={**frame.meta, "source_text": frame.text, "repair_mode": False},
-        )
+        return {
+            "text_out": replace(
+                frame,
+                lang=self.target,
+                text=translation,
+                meta={**frame.meta, "source_text": frame.text, "repair_mode": False},
+            )
+        }
 
     def describe(self) -> dict[str, Any]:
         info: dict[str, Any] = {

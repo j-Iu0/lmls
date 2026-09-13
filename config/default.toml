@@ -93,17 +93,17 @@ model = "qwen3.5:4b"
 [[node]]
 name = "screen"
 impl = "stdout_pretty"
-in = ["text.raw", "text.corrected", "text.out"]
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
 show_latency = true
 
 [[node]]
 name = "log"
 impl = "jsonl"
-in = ["text.raw", "text.corrected", "text.out"]
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
 path = "logs/session.jsonl"
 
 [[node]]
 name = "ws"
 impl = "websocket_server"
-in = ["text.raw", "text.corrected", "text.out"]
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
 port = 8765

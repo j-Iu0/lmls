@@ -35,13 +35,35 @@ function equal(a: unknown, b: unknown) {
     `${JSON.stringify(a)} != ${JSON.stringify(b)}`,
   );
 }
-Deno.test('all checked-in pipelines preserve implementations, options, fan-in, topics and global settings', () => {
+Deno.test('all checked-in pipelines preserve implementations, options, ports, topics and global settings', () => {
   for (const [name, config] of Object.entries(fixtures.configs)) {
     const doc = fromBackend(config), output = toBackend(doc);
     equal(output.nodes, config.nodes);
     equal(output.settings, config.settings);
     assert(doc.nodes.length === config.nodes.length, name);
   }
+});
+Deno.test('backend import rejects more than one publishing port for a topic', () => {
+  const config = structuredClone(fixtures.configs['mock.toml']);
+  const translator = config.nodes.find((node) => node.name === 'vi')!;
+  translator.outputs.text_out = 'text.raw';
+  let rejected = false;
+  try {
+    fromBackend(config);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
+
+  const doc = fromBackend(fixtures.configs['mock.toml']);
+  doc.nodes.find((node) => node.name === 'vi')!.raw!.outputs.text_out = 'text.raw';
+  rejected = false;
+  try {
+    toBackend(doc);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected);
 });
 Deno.test('unknown nested options, disabled nodes and editor extension metadata survive edits', () => {
   const config = structuredClone(fixtures.configs['mock.toml']);
@@ -170,18 +192,19 @@ Deno.test('real port types distinguish both outputs of translators and reject in
   const vi = doc.nodes.find((n) => n.kind === 'mock_translator')!;
   const out = makeNode('collect', 'new', { x: 1, y: 2 });
   doc.nodes.push(out);
-  assert(connectionError(doc, vi.id, out.id, 'corrected', 'text') === null);
+  assert(connectionError(doc, vi.id, out.id, 'corrected', 'raw') === null);
   doc.edges.push({
     id: 'new',
     source: vi.id,
     target: out.id,
     sourceHandle: 'corrected',
-    targetHandle: 'text',
+    targetHandle: 'raw',
   });
   const config = toBackend(doc);
-  assert(config.nodes.at(-1)?.inputs.text === `${vi.name}.corrected`);
-  assert(connectionError(doc, vi.id, out.id, 'text_out', 'text') === null);
-  assert(connectionError(doc, doc.nodes[0].id, out.id, 'audio', 'text') !== null);
+  assert(config.nodes.at(-1)?.inputs.raw === `${vi.name}.corrected`);
+  assert(connectionError(doc, vi.id, out.id, 'text_out', 'raw') !== null);
+  assert(connectionError(doc, vi.id, out.id, 'text_out', 'corrected') === null);
+  assert(connectionError(doc, doc.nodes[0].id, out.id, 'audio', 'corrected') !== null);
 });
 Deno.test('disconnect removes subscription; orphan topics are retained for server validation', () => {
   const config = structuredClone(fixtures.configs['mock.toml']);

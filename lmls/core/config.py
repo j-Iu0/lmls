@@ -31,8 +31,8 @@ Example::
 
 * a single string -- wired to the module's sole port;
 * a list of strings -- topics mapped positionally onto the declared ports, in
-  declaration order (a module with one input port takes any number of topics: fan-in).
-  In an ``out`` list, a ``"_"`` entry skips that port, leaving it unwired;
+  declaration order, with exactly one topic per declared port. In an ``out`` list,
+  a ``"_"`` entry skips that port, leaving it unwired;
 * a table -- explicit ``port_name = "topic"`` entries, validated against the
   module's port declarations.
 
@@ -67,8 +67,6 @@ class NodeConfig:
     #: {port_name: topic_name} -- maps each input port to a bus topic
     inputs: dict[str, str] = field(default_factory=dict)
     #: {port_name: topic_name} -- maps each output port to a bus topic.
-    #: The ``"*"`` key means "publish everything here" and is resolved to the module's
-    #: sole output port at wiring time.
     outputs: dict[str, str] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
     #: Bus subscription mode for all input subscriptions on this node.
@@ -114,8 +112,7 @@ def _parse_in(raw_in: Any, cls: type, name: str, index: int) -> dict[str, str]:
 
     * string -- the module's sole input port (error if it declares none or several);
     * list -- topics mapped positionally onto the declared ports, in declaration
-      order. When the module declares exactly one input port, any number of topics is
-      accepted and all of them subscribe to that port (fan-in);
+      order, with exactly one topic per declared port;
     * table -- explicit ``port_name = "topic"`` entries, validated against the
       module's declarations.
     """
@@ -134,20 +131,14 @@ def _parse_in(raw_in: Any, cls: type, name: str, index: int) -> dict[str, str]:
             raise ConfigError(
                 f"node {name!r}: {cls.__name__} declares no input ports"
             )
-        if len(raw_in) == len(declared):
-            # Unambiguous: one topic per declared port, positionally.
-            return {port: str(t) for port, t in zip(declared, raw_in)}
-        if len(declared) == 1:
-            # Fan-in: several topics, one port. Synthetic keys are internal bookkeeping
-            # for the same port; every one of them is type-checked against it.
-            port = declared[0]
-            return {port if i == 0 else f"{port}_{i}": str(t)
-                    for i, t in enumerate(raw_in)}
-        raise ConfigError(
-            f"node {name!r}: 'in' list has {len(raw_in)} topics for "
-            f"{cls.__name__} which declares {len(declared)} input ports "
-            f"{declared}; use a table of port = topic to name them"
-        )
+        if len(raw_in) != len(declared):
+            raise ConfigError(
+                f"node {name!r}: 'in' list has {len(raw_in)} topics for "
+                f"{cls.__name__} which declares {len(declared)} input ports "
+                f"{declared}; each port accepts exactly one topic, or use a table "
+                f"of port = topic to wire a declared subset"
+            )
+        return {port: str(t) for port, t in zip(declared, raw_in)}
     if isinstance(raw_in, dict):
         for port_name in raw_in:
             if port_name not in cls.inputs:
@@ -282,7 +273,7 @@ def config_from_dict(data: dict[str, Any], source_path: Path | None = None) -> G
 
 
 def config_to_dict(cfg: GraphConfig) -> dict[str, Any]:
-    """Serialize a graph to the public TOML/JSON document shape, including fan-in."""
+    """Serialize a graph without inventing or collapsing declared ports."""
     import copy
 
     data = copy.deepcopy(cfg.settings)
@@ -293,11 +284,7 @@ def config_to_dict(cfg: GraphConfig) -> dict[str, Any]:
         if node.skip_if_finalized is not None:
             raw["skip_if_finalized"] = node.skip_if_finalized
         if node.inputs:
-            cls = resolve(node.impl)
-            # Synthetic fan-in keys are internal; the public form is a topic list.
-            raw["in"] = (list(node.inputs.values()) if len(cls.inputs) == 1
-                         and (len(node.inputs) > 1 or set(node.inputs) != set(cls.inputs))
-                         else dict(node.inputs))
+            raw["in"] = dict(node.inputs)
         if node.outputs:
             raw["out"] = dict(node.outputs)
         data["node"].append(raw)
@@ -328,6 +315,12 @@ _CHAIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "in": "text.corrected",
         "out": {"text_out": "text.out"},
     },
+}
+
+_CHAIN_SINK_PORTS = {
+    "text.raw": "raw",
+    "text.corrected": "corrected",
+    "text.out": "translated",
 }
 
 
@@ -366,8 +359,8 @@ def chain_config(
         nodes.append(node)
         prev_topic = node.out_topics[0]
 
-    # Sinks subscribe to every topic carrying a TextFrame. The type comes from the
-    # producing port's declaration -- the topic's *name* decides nothing.
+    # Sinks subscribe to every topic carrying a TextFrame. Each topic is assigned to a
+    # distinct port declared by that sink; no subscription port is synthesized.
     from .types import TextFrame
 
     topic_types: dict[str, type] = {}
@@ -375,11 +368,24 @@ def chain_config(
         cls = resolve(n.impl)
         for port_name, topic in n.outputs.items():
             topic_types.setdefault(topic, cls.outputs[port_name])
-    text_topics_out = sorted(t for t, tt in topic_types.items() if tt is TextFrame)
+    text_topics_out = [t for t, tt in topic_types.items() if tt is TextFrame]
 
     for j, sink_impl in enumerate(sinks or ["stdout_pretty"]):
         raw_sink: dict[str, Any] = {"name": f"sink_{sink_impl}", "impl": sink_impl}
         if text_topics_out:
-            raw_sink["in"] = text_topics_out
+            sink_inputs = resolve(sink_impl).inputs
+            wiring = {
+                _CHAIN_SINK_PORTS[topic]: topic
+                for topic in text_topics_out
+                if topic in _CHAIN_SINK_PORTS
+            }
+            missing_topics = [topic for topic in text_topics_out if topic not in _CHAIN_SINK_PORTS]
+            missing_ports = [port for port in wiring if port not in sink_inputs]
+            if missing_topics or missing_ports:
+                raise ConfigError(
+                    f"cannot wire {sink_impl} with exact ports; unsupported topics "
+                    f"{missing_topics} or undeclared sink ports {missing_ports}"
+                )
+            raw_sink["in"] = wiring
         nodes.append(_parse_node(raw_sink, len(nodes) + j))
     return GraphConfig(nodes=nodes, settings=settings or {})

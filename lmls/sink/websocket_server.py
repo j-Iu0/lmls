@@ -48,10 +48,8 @@ class WebSocketSink(Module):
         send_timeout: a client that cannot accept a message within this window is
             disconnected.
 
-    Three declared input ports, one topic each -- ``raw``, ``corrected``, and
-    ``translated`` -- so the provenance a client needs to order revisions is part
-    of the module's declaration, and the port order matches the positional list
-    wiring used by the shipped configs.
+    Each subtitle stream has its own declared input port. Topic provenance comes from
+    the graph subscription and is preserved in every WebSocket message.
     """
 
     inputs: ClassVar[dict[str, type]] = {

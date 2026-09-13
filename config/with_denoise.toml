@@ -44,4 +44,4 @@ target = "vi"
 [[node]]
 name = "screen"
 impl = "stdout_pretty"
-in = ["text.raw", "text.corrected", "text.out"]
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }

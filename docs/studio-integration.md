@@ -29,17 +29,17 @@ metrics collection, or subtitle production for this integration.
 
 ## Mapping and constraints
 
-Canvas edges map declared source/target ports to bus topics. Single-port fan-in,
-multi-output modules, unconsumed outputs, unknown nested options and disabled
-nodes round-trip without collapsing the pipeline into the demo's five roles.
-Roles remain presentation hints only. Original input aliases are preserved when
-wiring is unchanged. New output topics are derived from the unique node name.
+Canvas edges map declared source/target ports to bus topics. Each input port accepts
+exactly one topic; a topic may still broadcast to input ports on multiple nodes.
+Multi-output modules, unconsumed outputs, unknown nested options and disabled nodes
+round-trip without collapsing the pipeline into the demo's five roles. Roles remain
+presentation hints only. New output topics are derived from the unique node name.
 
-A topic broadcasts every publisher to every subscriber. If a canvas edit tries
-to represent an impossible partial disconnection of a shared topic, export/run
-reports it rather than silently executing different wiring. Orphan subscriptions
-remain in the config so server validation can report them; importing does not
-silently repair an invalid graph.
+A topic has exactly one publishing output port and may broadcast to any number of
+declared input ports. Studio preserves that shape directly instead of inventing port
+aliases or shared-publisher disconnection rules. Orphan subscriptions remain in the
+config so server validation can report them; importing does not silently repair an
+invalid graph.
 
 The server decides whether a graph is runnable. The client locks at validation
 and uses authoritative startup/running/seeking/stopping states. Snapshot epochs

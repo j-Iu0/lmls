@@ -19,8 +19,11 @@ async def test_graph_websocket_preserves_topic_for_live_events_and_replay(unused
     config.nodes = [node for node in config.nodes if node.name != "screen"]
     config.nodes.append(NodeConfig(
         name="ws", impl="websocket_server",
-        inputs={"raw": "text.raw", "corrected": "text.corrected",
-                "translated": "text.out"},
+        inputs={
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out",
+        },
         options={"port": unused_tcp_port, "replay": 200},
     ))
     graph = Graph(config)

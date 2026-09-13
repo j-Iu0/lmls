@@ -520,14 +520,15 @@ async def test_translator_in_repair_mode_returns_both_ports():
     assert produced["text_out"].lang == "vi"
 
 
-async def test_translator_in_faithful_mode_returns_a_single_frame():
+async def test_translator_in_faithful_mode_names_its_output_port():
     translator = build("mock_translator", name="vi", target="vi", delay_ms=0)
     produced = await translator.process(
         TextFrame(text="hello everyone", lineage=Lineage.new("u1"))
     )
-    assert isinstance(produced, TextFrame)
-    assert produced.lang == "vi"
-    assert produced.meta["repair_mode"] is False
+    assert isinstance(produced, dict)
+    assert set(produced) == {"text_out"}
+    assert produced["text_out"].lang == "vi"
+    assert produced["text_out"].meta["repair_mode"] is False
 
 
 async def test_partials_are_not_translated():

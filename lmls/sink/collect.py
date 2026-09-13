@@ -14,7 +14,12 @@ from ..core.types import TextFrame
 
 
 class CollectSink(Module):
-    inputs: ClassVar[dict[str, type]] = {"text": TextFrame}
+    inputs: ClassVar[dict[str, type]] = {
+        "raw": TextFrame,
+        "corrected": TextFrame,
+        "translated": TextFrame,
+        "translated_secondary": TextFrame,
+    }
     outputs: ClassVar[dict[str, type]] = {}
 
     def __init__(self, **_: Any):

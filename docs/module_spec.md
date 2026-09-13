@@ -40,9 +40,9 @@ through named **topics** on a shared **Bus** (§6).
 Source ──topic──► Transform ──topic──► Transform ──topic──► Sink(s)
 ```
 
-The shape of the graph is arbitrary: linear chains, fan-out to parallel consumers,
-fan-in merging several topics into one module, optional stages removed and re-pointed
-in configuration without code changes.
+The shape of the graph is arbitrary: linear chains, topic fan-out to parallel consumers,
+multi-input modules with one topic wired to each declared port, and optional stages
+removed and re-pointed in configuration without code changes.
 
 Key properties:
 
@@ -149,8 +149,8 @@ async def process(self, frame: T) -> dict[str, Any]:
     # to the topic bound to that port
 ```
 
-A multi-port module **must** return a dict. A bare payload from a multi-port module
-would be published to the first declared output topic — do not rely on that.
+A multi-port module **must** return a dict. A bare payload from a multi-port module,
+or a dictionary key that is not a declared output port, is a graph error.
 
 ### 2.4 Sync vs async
 
@@ -249,9 +249,10 @@ per segment (§6.3, §7.4). Consumers that render results should implement the
 replace-on-higher-revision contract; producers of progressive results should reuse a
 stable identifier across partials and the final so consumers can correlate them.
 
-Under fan-out, multiple producers may emit revisions for the same segment
-interleaved. Assume nothing about global ordering beyond: a single subscriber sees its
-topic's items in publish order.
+Each topic has exactly one publishing output port, but different stages may emit
+revisions for the same segment on different topics. Assume nothing about global
+ordering across those topics; a single subscriber sees its topic's items in publish
+order.
 
 ### 4.4 Backpressure and loss
 
@@ -273,9 +274,9 @@ Context that spans items — a rolling window, a noise-floor estimate, recent re
 for context — is **instance state**: a `deque`, a counter, a model handle on `self`.
 It is never a method parameter; the runner passes only the payload. The module decides
 what to remember, when to update it, and when to clear it (typically in `stop()`).
-With fan-in, one `process()` call may arrive per subscription concurrently — state a
-module reads/writes from async `process()` must account for that, or the module should
-keep per-subscription state.
+With multiple declared inputs, one `process()` call may arrive per port concurrently —
+state a module reads/writes from async `process()` must account for that, or the module
+should keep per-port state.
 
 ### 4.6 Buffering and end-of-stream
 
@@ -585,8 +586,8 @@ How to wire modules into a pipeline is covered in the pipeline configuration gui
 | Source | `{}` | `{port: T}` | `async def run() -> AsyncIterator[T]` | One output port; yield promptly; stamp timing/provenance fields (e.g. `t_capture`) as early as possible; shutdown cancels the task — let `CancelledError` propagate |
 | Transform (1:1) | one port | one port | `process(T) -> U` | Return `None` to publish nothing; handle recoverable errors internally and return the input rather than raise (§4.7) |
 | Transform (1:N) | one port | one port | `process(T) -> list[U]` | Override `drain()` to flush buffered items at end-of-stream (§4.6); reuse stable ids across partials if the payload type supports revisioning |
-| Transform (multi-out) | one port | several ports | `process(T) -> dict[str, Any]` | Keys are declared output port names; a bare (non-dict) return goes to the first declared output topic — do not rely on that |
-| Sink | one port | `{}` | `process(T) -> None` | Owns its output channel (§5.4); per-segment replace-on-higher-revision display for `TextFrame` topics; flush buffered output in `stop()` |
+| Transform (multi-out) | one port | several ports | `process(T) -> dict[str, Any]` | Every key must be a declared output port name; bare returns and undeclared keys are errors |
+| Sink | one or more ports | `{}` | `process(T) -> None` | Each port maps to exactly one topic; own the output channel (§5.4); per-segment replace-on-higher-revision display for `TextFrame` topics; flush buffered output in `stop()` |
 
 **Never** set `frame.lineage.revision` — carry the incoming `Lineage` into output
 frames unchanged, or call `lineage.record_latency(name, seconds)`, which returns a

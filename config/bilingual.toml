@@ -49,4 +49,4 @@ target = "zh"
 [[node]]
 name = "screen"
 impl = "stdout_pretty"
-in = ["text.raw", "text.corrected", "text.vi", "text.zh"]
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.vi", translated_secondary = "text.zh" }

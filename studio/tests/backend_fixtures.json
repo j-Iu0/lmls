@@ -125,16 +125,19 @@
           "annotation": "int"
         }
       ],
-      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n  A sink that needs provenance may additionally implement\n  ``process_with_topic(frame, topic)``; the graph calls it instead of ``process``.\n  Both sync and async methods are supported. Topic names remain configuration,\n  and the frame itself is unchanged.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (required when the\n  module declares multiple outputs), or a ``list`` for the single output port\n  (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
     },
     {
       "impl": "collect",
       "inputs": {
-        "text": "TextFrame"
+        "raw": "TextFrame",
+        "corrected": "TextFrame",
+        "translated": "TextFrame",
+        "translated_secondary": "TextFrame"
       },
       "outputs": {},
       "options": [],
-      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n  A sink that needs provenance may additionally implement\n  ``process_with_topic(frame, topic)``; the graph calls it instead of ``process``.\n  Both sync and async methods are supported. Topic names remain configuration,\n  and the frame itself is unchanged.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (required when the\n  module declares multiple outputs), or a ``list`` for the single output port\n  (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
     },
     {
       "impl": "deepfilternet",
@@ -324,6 +327,15 @@
           "annotation": "bool"
         },
         {
+          "name": "pulse",
+          "default": null,
+          "required": false,
+          "annotation": "str | bool | None",
+          "choices": [
+            "monitor"
+          ]
+        },
+        {
           "name": "realtime",
           "default": true,
           "required": false,
@@ -348,7 +360,7 @@
           "annotation": "list[str] | None"
         }
       ],
-      "description": "Decode any ffmpeg-readable source to the canonical frame format.\n\nArgs:\n    url: file path, stream URL, or -- with ``device=True`` -- an avfoundation audio\n        device name or index such as ``\"Background Music\"``.\n    device: treat ``url`` as an ``avfoundation`` capture device (macOS).\n    realtime: throttle file playback to wall-clock speed (``-re``). Ignored for\n        devices and live network streams, which are inherently realtime.\n    extra_args: raw ffmpeg arguments inserted before the input, for anything this\n        wrapper does not expose."
+      "description": "Decode any ffmpeg-readable source to the canonical frame format.\n\nArgs:\n    url: file path or stream URL; with ``device=True`` an ``avfoundation`` audio\n        device name or index such as ``\"Background Music\"`` (macOS). Optional when\n        ``pulse`` is set.\n    device: treat ``url`` as an ``avfoundation`` capture device (macOS).\n    pulse: capture system/application audio on Linux through PipeWire's PulseAudio\n        interface. ``True`` (or ``\"monitor\"``) records the default output monitor,\n        which hears *every application*. A string is resolved against ``pactl``:\n        first as a literal source name, then as a sink substring (a ``.monitor``\n        source is derived), then as a source substring.\n    realtime: throttle file playback to wall-clock speed (``-re``). Ignored for\n        devices and live network streams, which are inherently realtime.\n    extra_args: raw ffmpeg arguments inserted before the input, for anything this\n        wrapper does not expose."
     },
     {
       "impl": "fused_llm",
@@ -523,7 +535,9 @@
     {
       "impl": "jsonl",
       "inputs": {
-        "text": "TextFrame"
+        "raw": "TextFrame",
+        "corrected": "TextFrame",
+        "translated": "TextFrame"
       },
       "outputs": {},
       "options": [
@@ -987,7 +1001,7 @@
         "text_out": "TextFrame"
       },
       "options": [],
-      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a\n  ``list`` for the single output port (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
+      "description": "Base class for every pipeline node.\n\nEach subclass declares its port types as class-level dicts. The graph runner\ninspects these to wire subscriptions and validate types.\n\nConventions the runner relies on:\n\n* ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding\n  payloads for its output port(s).\n* ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.\n  A sink that needs provenance may additionally implement\n  ``process_with_topic(frame, topic)``; the graph calls it instead of ``process``.\n  Both sync and async methods are supported. Topic names remain configuration,\n  and the frame itself is unchanged.\n* both non-empty -- a **transform**; implements ``process`` returning a single\n  payload (1-to-1), a ``dict`` keyed by output port name (required when the\n  module declares multiple outputs), or a ``list`` for the single output port\n  (1-to-list).\n* ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``\n  automatically. ``run`` must be ``async``.\n* Internal state (LLM context windows, DSP state) lives on the instance, never in\n  method parameters."
     },
     {
       "impl": "passthrough_denoiser",
@@ -1156,7 +1170,10 @@
     {
       "impl": "stdout_pretty",
       "inputs": {
-        "text": "TextFrame"
+        "raw": "TextFrame",
+        "corrected": "TextFrame",
+        "translated": "TextFrame",
+        "translated_secondary": "TextFrame"
       },
       "outputs": {},
       "options": [
@@ -1224,7 +1241,9 @@
     {
       "impl": "websocket_server",
       "inputs": {
-        "text": "TextFrame"
+        "raw": "TextFrame",
+        "corrected": "TextFrame",
+        "translated": "TextFrame"
       },
       "outputs": {},
       "options": [
@@ -1253,7 +1272,7 @@
           "annotation": "float"
         }
       ],
-      "description": "Args:\nhost/port: bind address. Defaults to localhost only -- a lecture transcript is\n    not something to expose on a classroom network by accident.\nreplay: events buffered for clients that connect late.\nsend_timeout: a client that cannot accept a message within this window is\n    disconnected."
+      "description": "Args:\n    host/port: bind address. Defaults to localhost only -- a lecture transcript is\n        not something to expose on a classroom network by accident.\n    replay: events buffered for clients that connect late.\n    send_timeout: a client that cannot accept a message within this window is\n        disconnected.\n\nEach subtitle stream has its own declared input port. Topic provenance comes from\nthe graph subscription and is preserved in every WebSocket message."
     }
   ],
   "configs": {
@@ -1337,9 +1356,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {},
@@ -1354,11 +1373,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -1443,9 +1457,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {},
@@ -1460,11 +1474,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -1538,9 +1547,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {},
@@ -1555,11 +1564,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -1648,9 +1652,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1664,9 +1668,9 @@
           "name": "log",
           "impl": "jsonl",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1680,9 +1684,9 @@
           "name": "ws",
           "impl": "websocket_server",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1699,11 +1703,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -1777,9 +1776,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1793,9 +1792,9 @@
           "name": "log",
           "impl": "jsonl",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1809,9 +1808,9 @@
           "name": "ws",
           "impl": "websocket_server",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {
@@ -1828,11 +1827,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -1932,10 +1926,10 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.vi",
-            "text_3": "text.zh"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.vi",
+            "translated_secondary": "text.zh"
           },
           "outputs": {},
           "options": {},
@@ -1950,12 +1944,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.raw",
-          "text.vi",
-          "text.zh"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -2040,9 +2028,9 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.corrected",
-            "text_2": "text.out"
+            "raw": "text.raw",
+            "corrected": "text.corrected",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {},
@@ -2057,11 +2045,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.corrected",
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}
@@ -2146,8 +2129,8 @@
           "name": "screen",
           "impl": "stdout_pretty",
           "inputs": {
-            "text": "text.raw",
-            "text_1": "text.out"
+            "raw": "text.raw",
+            "translated": "text.out"
           },
           "outputs": {},
           "options": {},
@@ -2162,10 +2145,6 @@
         }
       },
       "editor": {
-        "subtitle_topics": [
-          "text.out",
-          "text.raw"
-        ],
         "positions": {},
         "overlays": {},
         "auto_pause": {}

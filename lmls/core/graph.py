@@ -87,7 +87,7 @@ def validate(cfg: GraphConfig) -> list[str]:
 
     # Build topic -> payload type map by following output port declarations
     topic_types: dict[str, type] = {}
-    produced: dict[str, list[str]] = {}
+    produced: dict[str, str] = {}
     for n in nodes:
         cls = classes[n.name]
         for port_name, topic in n.outputs.items():
@@ -97,13 +97,14 @@ def validate(cfg: GraphConfig) -> list[str]:
                     f"by {cls.__name__}"
                 )
             port_type = cls.outputs[port_name]
-            if topic in topic_types and topic_types[topic] is not port_type:
+            if topic in produced:
                 raise GraphError(
-                    f"topic {topic!r} carries conflicting types: "
-                    f"{topic_types[topic].__name__} and {port_type.__name__}"
+                    f"topic {topic!r} has more than one publisher: "
+                    f"{produced[topic]!r} and {n.name!r}; each topic must be published "
+                    f"by exactly one output port"
                 )
             topic_types[topic] = port_type
-            produced.setdefault(topic, []).append(n.name)
+            produced[topic] = n.name
 
     # Validate subscriber input port types against the topic type
     for n in nodes:
@@ -115,10 +116,6 @@ def validate(cfg: GraphConfig) -> list[str]:
                 )
             declared = cls.inputs.get(port_name)
             if declared is None:
-                # Auto-named subscription ports (list-form `in`) are not declared by
-                # the class; accept them when the topic carries a type the module reads.
-                if topic_types[topic] in set(cls.inputs.values()):
-                    continue
                 raise GraphError(
                     f"node {n.name!r}: input port {port_name!r} not declared by "
                     f"{cls.__name__}"
@@ -141,11 +138,11 @@ def validate(cfg: GraphConfig) -> list[str]:
     return warnings
 
 
-def _check_acyclic(nodes: Sequence[NodeConfig], produced: dict[str, list[str]]) -> None:
+def _check_acyclic(nodes: Sequence[NodeConfig], produced: dict[str, str]) -> None:
     edges: dict[str, set[str]] = {n.name: set() for n in nodes}
     for n in nodes:
         for topic in n.inputs.values():
-            for upstream in produced.get(topic, []):
+            if upstream := produced.get(topic):
                 edges[upstream].add(n.name)
 
     state: dict[str, int] = {}  # 0 unvisited, 1 on stack, 2 done
@@ -478,7 +475,7 @@ class Graph:
         stage = node.stage
         is_async = inspect.iscoroutinefunction(stage.process)
 
-        # If multiple subscriptions (fan-in), run one pump per subscription concurrently
+        # Multi-input modules run one pump per declared input subscription concurrently.
         pumps = [
             asyncio.create_task(self._pump(node, sub, is_async))
             for sub in node.subscriptions
@@ -607,19 +604,17 @@ class Graph:
 
             # Resolve output topic
             if port_name is not None:
+                if port_name not in node.stage.outputs:
+                    raise GraphError(
+                        f"{node.config.name}: process returned undeclared output port "
+                        f"{port_name!r}; declared: {sorted(node.stage.outputs)}"
+                    )
                 topic = node.config.topic_for_port(port_name)
             else:
-                # A multi-port module may explicitly declare its bare-result port.
-                # Sorting topic strings would otherwise reroute a translation when
-                # an editor connects its optional correction output.
-                default_port = node.stage.default_output
-                if default_port is not None:
-                    if default_port not in node.stage.outputs:
-                        raise GraphError(f"{node.config.name}: default output {default_port!r} is not declared")
-                    topic = node.config.topic_for_port(default_port)
-                elif len(node.config.outputs) == 1:
-                    topic = next(iter(node.config.outputs.values()))
-                elif not node.config.outputs:
+                if len(node.stage.outputs) == 1:
+                    only_port = next(iter(node.stage.outputs))
+                    topic = node.config.topic_for_port(only_port)
+                elif not node.stage.outputs:
                     # Every output port was skipped or never wired: like a named
                     # result for an unwired port, the frame is simply dropped.
                     if node.config.name not in self._no_output_warned:
@@ -630,7 +625,10 @@ class Graph:
                         )
                     continue
                 else:
-                    raise GraphError(f"{node.config.name}: multiple outputs require a named result or default_output")
+                    raise GraphError(
+                        f"{node.config.name}: process must return a mapping keyed by "
+                        f"declared output port; declared: {sorted(node.stage.outputs)}"
+                    )
 
             if topic is None:
                 log.debug(

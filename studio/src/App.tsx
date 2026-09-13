@@ -171,8 +171,8 @@ export function App() {
       document.edges.map((wire) => ({
         ...previous.find((e) => e.id === wire.id),
         ...wire,
-        sourceHandle: wire.sourceHandle ?? 'out',
-        targetHandle: wire.targetHandle ?? 'in',
+        sourceHandle: wire.sourceHandle,
+        targetHandle: wire.targetHandle,
         type: 'smoothstep',
         animated: locked,
         style: {
@@ -180,7 +180,7 @@ export function App() {
             ports(
               document.nodes.find((n) => n.id === wire.source)!,
               'source',
-            )[wire.sourceHandle ?? 'out']
+            )[wire.sourceHandle]
           ],
           strokeWidth: 1.5,
         },
@@ -584,9 +584,9 @@ export function App() {
                   <span>
                     <b>{m.title}</b>
                     <small>
-                      {m.impl} · {m.input ?? 'Media'}
+                      {m.impl} · {Object.values(m.inputs ?? {})[0] ?? 'Media'}
                       <span>→</span>
-                      {m.output ?? 'Output'}
+                      {Object.values(m.outputs ?? {})[0] ?? 'Output'}
                     </small>
                   </span>
                   <Plus size={14} />

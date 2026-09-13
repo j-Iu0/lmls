@@ -16,6 +16,7 @@ from lmls.cli.demo import (
     _selected_model,
     _startup_detail,
 )
+from lmls.core.config import config_from_dict, config_to_dict
 from lmls.core.graph import Graph
 from lmls.core.startup import StartupEvent, StartupPhase, StartupProgress
 
@@ -69,6 +70,26 @@ def test_demo_graph_is_built_in_with_a_single_target():
     }
     assert fused.options["target"] == "vi"
     assert not [n for n in cfg.nodes if n.name.startswith("translate_")]
+
+
+def test_demo_websocket_ports_round_trip_through_public_config():
+    cfg = build_demo(websocket_port=8765)
+
+    encoded = config_to_dict(cfg)
+    websocket = next(node for node in encoded["node"] if node["name"] == "ws")
+    assert websocket["in"] == {
+        "raw": "text.raw",
+        "corrected": "text.corrected",
+        "translated": "text.translation",
+    }
+
+    restored = config_from_dict(encoded)
+    assert restored.node("ws").inputs == {
+        "raw": "text.raw",
+        "corrected": "text.corrected",
+        "translated": "text.translation",
+    }
+    Graph(restored)
 
 
 def test_demo_backend_variants():

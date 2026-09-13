@@ -80,7 +80,6 @@ def from_editor(data: dict[str, Any]) -> GraphConfig:
         item.update({k: n[k] for k in ("name", "impl", "enabled", "mode") if k in n})
         if n.get("skip_if_finalized") is not None:
             item["skip_if_finalized"] = n["skip_if_finalized"]
-        cls = resolve(n.get("impl", ""))
         ins = n.get("inputs", {})
         outs = n.get("outputs", {})
         if not isinstance(ins, dict) or not isinstance(outs, dict):
@@ -88,14 +87,7 @@ def from_editor(data: dict[str, Any]) -> GraphConfig:
         if not all(isinstance(t, str) and t for t in [*ins.values(), *outs.values()]):
             raise ConfigError("topic names must be nonempty strings")
         if ins:
-            if len(cls.inputs) == 1 and (len(ins) > 1 or set(ins) != set(cls.inputs)):
-                base = next(iter(cls.inputs))
-                if any(p != base and not (p.startswith(base + "_") and p[len(base)+1:].isdigit())
-                       for p in ins):
-                    raise ConfigError(f"invalid fan-in ports for {n.get('name')!r}")
-                item["in"] = list(ins.values())
-            else:
-                item["in"] = ins
+            item["in"] = ins
         if outs:
             item["out"] = outs
         raw["node"].append(item)

@@ -38,8 +38,9 @@ class Module(ABC):
       Both sync and async methods are supported. Topic names remain configuration,
       and the frame itself is unchanged.
     * both non-empty -- a **transform**; implements ``process`` returning a single
-      payload (1-to-1), a ``dict`` keyed by output port name (1-to-many), or a
-      ``list`` for the single output port (1-to-list).
+      payload (1-to-1), a ``dict`` keyed by output port name (required when the
+      module declares multiple outputs), or a ``list`` for the single output port
+      (1-to-list).
     * ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``
       automatically. ``run`` must be ``async``.
     * Internal state (LLM context windows, DSP state) lives on the instance, never in
@@ -53,11 +54,6 @@ class Module(ABC):
     #: {port_name: payload_type} -- what this module writes to the bus.
     #: Empty dict means this is a sink (no outputs).
     outputs: ClassVar[dict[str, type]] = {}
-
-    #: Optional destination for a bare result from a multi-output module. Named
-    #: dictionary results still select their own ports. Topic names never select
-    #: the default; unconnected default ports intentionally publish nothing.
-    default_output: ClassVar[str | None] = None
 
     #: Constructor/config classes whose keyword arguments this wrapper forwards.
     #: Registry introspection uses these for CLI, documentation and API tooling.

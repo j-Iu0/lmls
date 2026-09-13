@@ -373,7 +373,8 @@ class Bus:
 
     def register_publisher(self, topic: str) -> None:
         """Declare intent to publish, so ``close`` only fires when *all* publishers are
-        done. Two translators may legitimately share one output topic."""
+        done. The low-level bus supports direct multi-publisher use; validated graph
+        configurations deliberately require one publishing output port per topic."""
         self._publishers[topic] = self._publishers.get(topic, 0) + 1
         st = self._stats.setdefault(topic, TopicStats(mode=self.default_mode(topic)))
         st.publishers += 1

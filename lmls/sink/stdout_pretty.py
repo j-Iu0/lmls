@@ -66,7 +66,12 @@ class PrettyStdoutSink(Module):
         colour: disable for a plain log or a non-tty.
     """
 
-    inputs: ClassVar[dict[str, type]] = {"text": TextFrame}
+    inputs: ClassVar[dict[str, type]] = {
+        "raw": TextFrame,
+        "corrected": TextFrame,
+        "translated": TextFrame,
+        "translated_secondary": TextFrame,
+    }
     outputs: ClassVar[dict[str, type]] = {}
 
     def __init__(

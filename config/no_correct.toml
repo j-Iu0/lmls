@@ -45,4 +45,4 @@ model = "qwen3.5:4b"
 [[node]]
 name = "screen"
 impl = "stdout_pretty"
-in = ["text.raw", "text.out"]
+in = { raw = "text.raw", translated = "text.out" }

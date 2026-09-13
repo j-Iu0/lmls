@@ -44,14 +44,14 @@ class Source(Module):
 
 
 class Transform(Source):
-    inputs = {"in": TextFrame}
+    inputs = {"in": TextFrame, "other": TextFrame}
 
     def process(self, frame):
         return [replace(frame, text=frame.text + "!"), replace(frame, text="again")]
 
 
 class Sink(Source):
-    inputs = {"in": TextFrame}
+    inputs = {"in": TextFrame, "other": TextFrame}
     outputs = {}
 
     def __init__(self):
@@ -100,10 +100,10 @@ def make_graph(monkeypatch):
                 UtterancePass, UtteranceSink):
         monkeypatch.setitem(REGISTRY, cls.__name__, f"{__name__}:{cls.__name__}")
 
-    def make(*, fanin=False, transform=True, **kwargs):
+    def make(*, multi_input=False, transform=True, **kwargs):
         nodes = [NodeConfig("source", "Source", outputs={"out": "raw"})]
         inputs = {"in": "raw"}
-        if fanin:
+        if multi_input:
             nodes.append(NodeConfig("other", "Source", outputs={"out": "other"}))
             inputs["other"] = "other"
         if transform:
@@ -235,8 +235,8 @@ async def test_startup_cancel_and_repeated_cancel_wait_for_cleanup(make_graph):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("transform", [True, False])
-async def test_fanin_failure_joins_sibling_pumps_before_stop(make_graph, transform):
-    graph = make_graph(fanin=True, transform=transform)
+async def test_multi_input_failure_joins_sibling_pumps_before_stop(make_graph, transform):
+    graph = make_graph(multi_input=True, transform=transform)
     graph.nodes[0].stage.frames = [TextFrame("wait")]
     graph.nodes[1].stage.frames = [TextFrame("fail")]
     stage = graph.nodes[2].stage
@@ -271,7 +271,7 @@ async def test_fanin_failure_joins_sibling_pumps_before_stop(make_graph, transfo
 
 @pytest.mark.asyncio
 async def test_cancel_full_queues_closes_source_and_leaves_no_pumps(make_graph):
-    graph = make_graph(fanin=True, transform=False)
+    graph = make_graph(multi_input=True, transform=False)
     graph.nodes[0].stage.frames *= 1000
     graph.nodes[1].stage.frames *= 1000
     entered = asyncio.Event()
@@ -518,8 +518,8 @@ async def test_bus_reports_live_queue_depth_and_catchup_overwrites():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("is_async", [True, False])
 @pytest.mark.parametrize("outcome", ["empty", "none", "fail", "cancel"])
-async def test_in_flight_processing_fanin_and_terminal_cleanup(make_graph, is_async, outcome):
-    graph = make_graph(fanin=True)
+async def test_in_flight_processing_multi_input_and_terminal_cleanup(make_graph, is_async, outcome):
+    graph = make_graph(multi_input=True)
     entered = asyncio.Queue()
     async_release, sync_release = asyncio.Event(), threading.Event()
     loop = asyncio.get_running_loop()

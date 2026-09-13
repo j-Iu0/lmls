@@ -23,8 +23,6 @@ export interface ModuleDefinition {
   subtitle: string;
   impl: string;
   color: string;
-  input?: Payload;
-  output?: Payload;
   fields: Field[];
   inputs?: Record<string, Payload>;
   outputs?: Record<string, Payload>;
@@ -51,8 +49,8 @@ export interface Wire {
   id: string;
   source: string;
   target: string;
-  sourceHandle?: string;
-  targetHandle?: string;
+  sourceHandle: string;
+  targetHandle: string;
   topic?: string;
 }
 export interface Document {
@@ -70,7 +68,8 @@ export const catalog: Record<Kind, ModuleDefinition> = {
     subtitle: 'Audio & video',
     impl: 'ffmpeg',
     color: '#eab27b',
-    output: 'audio',
+    inputs: {},
+    outputs: { out: 'audio' },
     fields: [
       {
         key: 'realtime',
@@ -87,8 +86,8 @@ export const catalog: Record<Kind, ModuleDefinition> = {
     subtitle: 'Find the moments that matter',
     impl: 'energy',
     color: '#70c6c7',
-    input: 'audio',
-    output: 'utterance',
+    inputs: { in: 'audio' },
+    outputs: { out: 'utterance' },
     fields: [
       {
         key: 'threshold',
@@ -128,8 +127,8 @@ export const catalog: Record<Kind, ModuleDefinition> = {
     subtitle: 'Speech → text',
     impl: 'faster_whisper',
     color: '#bba0e8',
-    input: 'utterance',
-    output: 'text',
+    inputs: { in: 'utterance' },
+    outputs: { out: 'text' },
     fields: [
       {
         key: 'model',
@@ -171,8 +170,8 @@ export const catalog: Record<Kind, ModuleDefinition> = {
     subtitle: 'A little less lost in translation',
     impl: 'ollama',
     color: '#92b5f4',
-    input: 'text',
-    output: 'text',
+    inputs: { in: 'text' },
+    outputs: { out: 'text' },
     fields: [
       {
         key: 'target',
@@ -206,7 +205,8 @@ export const catalog: Record<Kind, ModuleDefinition> = {
     subtitle: 'The words, together',
     impl: 'stdout_pretty',
     color: '#bfce8a',
-    input: 'text',
+    inputs: { in: 'text' },
+    outputs: {},
     fields: [
       {
         key: 'destination',
@@ -248,18 +248,27 @@ export function example(): Document {
       makeNode('translator', 'translate', { x: 900, y: 0 }),
     ],
     edges: [
-      { id: 'source-vad', source: 'source', target: 'vad' },
-      { id: 'vad-asr', source: 'vad', target: 'asr' },
-      { id: 'asr-translate', source: 'asr', target: 'translate' },
+      {
+        id: 'source-vad',
+        source: 'source',
+        sourceHandle: 'out',
+        target: 'vad',
+        targetHandle: 'in',
+      },
+      { id: 'vad-asr', source: 'vad', sourceHandle: 'out', target: 'asr', targetHandle: 'in' },
+      {
+        id: 'asr-translate',
+        source: 'asr',
+        sourceHandle: 'out',
+        target: 'translate',
+        targetHandle: 'in',
+      },
     ],
   };
 }
 export function ports(node: PipelineNode, direction: 'source' | 'target'): Record<string, Payload> {
   const d = catalog[node.kind];
-  const declared = direction === 'source' ? d.outputs : d.inputs;
-  if (declared) return declared;
-  const payload = direction === 'source' ? d.output : d.input;
-  return payload ? { [direction === 'source' ? 'out' : 'in']: payload } : {};
+  return (direction === 'source' ? d.outputs : d.inputs) ?? {};
 }
 export function connectionError(
   doc: Document,
@@ -272,22 +281,19 @@ export function connectionError(
   if (!a || !b) return 'Both nodes must exist.';
   if (source === target) return 'A node cannot connect to itself.';
   const outputs = ports(a, 'source'), inputs = ports(b, 'target');
-  sourceHandle ??= Object.keys(outputs)[0];
-  targetHandle ??= Object.keys(inputs)[0];
+  if (!sourceHandle || !targetHandle) return 'Choose an exact output and input port.';
   if (!outputs[sourceHandle] || outputs[sourceHandle] !== inputs[targetHandle]) {
     return 'Connect matching payload types.';
   }
   if (
     doc.edges.some((e) =>
       e.source === source && e.target === target &&
-      (e.sourceHandle ?? Object.keys(outputs)[0]) === sourceHandle &&
-      (e.targetHandle ?? Object.keys(inputs)[0]) === targetHandle
+      e.sourceHandle === sourceHandle && e.targetHandle === targetHandle
     )
   ) {
     return 'This connection already exists.';
   }
   if (
-    Object.keys(inputs).length > 1 &&
     doc.edges.some((e) => e.target === target && e.targetHandle === targetHandle)
   ) return 'This input already has a connection.';
   const seen = new Set<string>();
@@ -304,7 +310,7 @@ export function validate(doc: Document): string[] {
   if (!doc.nodes.some((n) => n.kind === 'source')) errors.push('Add a media source.');
   if (!doc.nodes.some((n) => n.kind === 'transcriber')) errors.push('Add a transcription node.');
   for (const node of doc.nodes) {
-    if (catalog[node.kind].input && !doc.edges.some((e) => e.target === node.id)) {
+    if (Object.keys(ports(node, 'target')).length && !doc.edges.some((e) => e.target === node.id)) {
       errors.push(`${node.name} needs an input.`);
     }
   }
@@ -353,10 +359,17 @@ export function parseDocument(text: string): Document {
   const edgeIds = new Set<string>();
   for (const e of raw.edges) {
     if (
-      typeof e?.id !== 'string' || edgeIds.has(e.id) || connectionError(clean, e.source, e.target)
+      typeof e?.id !== 'string' || edgeIds.has(e.id) ||
+      connectionError(clean, e.source, e.target, e.sourceHandle, e.targetHandle)
     ) throw new Error('Invalid graph connection.');
     edgeIds.add(e.id);
-    clean.edges.push({ id: e.id, source: e.source, target: e.target });
+    clean.edges.push({
+      id: e.id,
+      source: e.source,
+      sourceHandle: e.sourceHandle,
+      target: e.target,
+      targetHandle: e.targetHandle,
+    });
   }
   return clean;
 }

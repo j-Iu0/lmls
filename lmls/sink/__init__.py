@@ -4,9 +4,8 @@
     jsonl             append-only event log (the evidence-of-testing deliverable)
     websocket_server  broadcast to any UI (the seam a GUI attaches to)
 
-A sink subscribes to as many topics as it likes. Subscribing one sink to both
-``text.raw`` and ``text.corrected`` is what produces the two-tier display: fast
-provisional English, then a corrected revision that replaces it in place.
+A sink exposes one declared port for each subtitle stream it accepts. Multiple sinks may
+subscribe to the same topic, but every individual port is wired to exactly one topic.
 """
 
 from .jsonl import JsonlSink

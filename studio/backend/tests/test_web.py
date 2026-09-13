@@ -251,7 +251,7 @@ async def test_two_file_branches_keep_subtitle_timing_and_ids_separate(client):
     await ws.close()
 
 
-async def test_optional_translator_socket_does_not_steal_default_output(client):
+async def test_translator_routes_faithful_result_by_declared_output_port(client):
     session = client.server.app[SESSION]
     doc = copy.deepcopy(session.config)
     translator = next(n for n in doc['nodes'] if n['name'] == 'translate')

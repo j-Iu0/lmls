@@ -14,7 +14,7 @@ import pytest
 
 from lmls.core.config import ConfigError, GraphConfig, chain_config, load_config
 from lmls.core.graph import Graph, GraphError, mermaid, validate
-from lmls.core.types import AudioFrame, TextFrame, Utterance
+from lmls.core.types import AudioFrame, Lineage, TextFrame, Utterance
 
 pytestmark = pytest.mark.asyncio
 
@@ -51,7 +51,11 @@ def full_pipeline(**overrides) -> list[dict]:
          "in": "text.corrected", "out": {"text_out": "text.out"},
          "target": "vi", "delay_ms": 0},
         {"name": "sink", "impl": "jsonl",
-         "in": ["text.raw", "text.corrected", "text.out"]},
+         "in": {
+             "raw": "text.raw",
+             "corrected": "text.corrected",
+             "translated": "text.out",
+         }},
     ]
 
 
@@ -91,17 +95,57 @@ def test_a_port_name_not_declared_by_the_module_is_an_error():
         cfg_from(nodes)
 
 
-def test_a_topic_cannot_carry_two_types():
+def test_an_input_list_cannot_create_implicit_ports():
     nodes = full_pipeline()
-    # The "wrong" translator publishes Utterance onto a topic the translator reads as
-    # text -- a segmenter output wired into a text topic.
+    nodes[4]["in"] = ["text.raw", "text.corrected"]
+    with pytest.raises(ConfigError, match="each port accepts exactly one topic"):
+        cfg_from(nodes)
+
+
+def test_validation_rejects_an_implicit_input_port_when_parsing_is_bypassed():
+    cfg = cfg_from(full_pipeline())
+    cfg.node("fix").inputs = {"implicit": "text.raw"}
+    with pytest.raises(GraphError, match="not declared by RuleCorrector"):
+        validate(cfg)
+
+
+def test_a_topic_cannot_have_two_publishers():
+    nodes = full_pipeline()
+    # A second output port cannot merge into the ASR publisher's topic, regardless of
+    # whether its payload type happens to match.
     nodes.insert(
         5,
         {"name": "bogus", "impl": "energy",
          "in": "audio.raw", "out": {"utterance": "text.raw"}},
     )
-    with pytest.raises(GraphError, match="conflicting types"):
+    with pytest.raises(GraphError, match="more than one publisher"):
         validate(cfg_from(nodes))
+
+
+def test_two_output_ports_cannot_publish_the_same_topic():
+    nodes = full_pipeline()
+    nodes[5]["out"] = {
+        "text_out": "text.out",
+        "corrected": "text.out",
+    }
+    with pytest.raises(GraphError, match="more than one publisher"):
+        validate(cfg_from(nodes))
+
+
+async def test_multi_output_module_cannot_return_a_bare_payload():
+    graph = Graph(cfg_from(full_pipeline()))
+    translator = next(n for n in graph.nodes if n.config.name == "vi")
+    frame = TextFrame("hello", lineage=Lineage.new("segment"))
+    with pytest.raises(GraphError, match="must return a mapping"):
+        await graph._publish_result(translator, frame, frame, 0.0)
+
+
+async def test_module_cannot_return_an_undeclared_output_port():
+    graph = Graph(cfg_from(full_pipeline()))
+    translator = next(n for n in graph.nodes if n.config.name == "vi")
+    frame = TextFrame("hello", lineage=Lineage.new("segment"))
+    with pytest.raises(GraphError, match="undeclared output port 'implicit'"):
+        await graph._publish_result(translator, {"implicit": frame}, frame, 0.0)
 
 
 def test_cycles_are_rejected():
@@ -116,7 +160,8 @@ def test_cycles_are_rejected():
         {"name": "vi", "impl": "mock_translator",
          "in": "text.corrected", "out": {"text_out": "text.raw"},  # <- back into fix
          "target": "vi", "delay_ms": 0},
-        {"name": "sink", "impl": "jsonl", "in": ["text.corrected"]},
+        {"name": "sink", "impl": "jsonl",
+         "in": {"corrected": "text.corrected"}},
     ]
     with pytest.raises(GraphError, match="cycle"):
         validate(cfg_from(nodes))
@@ -159,7 +204,7 @@ def test_an_out_list_can_skip_a_port_with_underscore():
     nodes[5]["out"] = ["_", "text.corrected"]
     # vi now publishes text.corrected, so it must stop reading it (self-cycle):
     nodes[5]["in"] = "text.raw"
-    nodes[6]["in"] = ["text.raw", "text.corrected"]  # text.out is no longer produced
+    nodes[6]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
     cfg = cfg_from(nodes)
     assert cfg.node("vi").outputs == {"corrected": "text.corrected"}
     assert "text.out" not in cfg.node("vi").out_topics
@@ -184,7 +229,7 @@ async def test_an_all_underscore_out_list_publishes_nothing():
     """A transform with every output port skipped is valid and simply publishes nothing."""
     nodes = full_pipeline()
     nodes[5]["out"] = ["_", "_"]
-    nodes[6]["in"] = ["text.raw", "text.corrected"]  # text.out is no longer produced
+    nodes[6]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
     assert validate(cfg_from(nodes)) == []
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)
@@ -228,7 +273,7 @@ async def test_a_skipped_out_port_publishes_nothing():
     nodes[5]["out"] = ["_", "text.corrected"]
     nodes[5]["in"] = "text.raw"  # vi publishes text.corrected now; reading it = cycle
     nodes[5]["repair_mode"] = True
-    nodes[6]["in"] = ["text.raw", "text.corrected"]
+    nodes[6]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)
     assert graph.metrics.counts.get("en", 0) > 0  # corrected English landed
@@ -277,7 +322,7 @@ async def test_minimal_pipeline_is_just_source_vad_asr_translate():
         {"name": "vi", "impl": "mock_translator",
          "in": "text.raw", "out": {"text_out": "text.out"},
          "target": "vi", "delay_ms": 0},
-        {"name": "sink", "impl": "jsonl", "in": ["text.out"]},
+        {"name": "sink", "impl": "jsonl", "in": {"translated": "text.out"}},
     ]
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)
@@ -290,7 +335,8 @@ async def test_minimal_pipeline_is_just_source_vad_asr_translate():
 async def test_one_topic_feeds_several_consumers():
     """text.corrected is read by the translator AND two sinks, each independently."""
     nodes = full_pipeline()
-    nodes.append({"name": "sink2", "impl": "jsonl", "in": ["text.corrected"]})
+    nodes.append({"name": "sink2", "impl": "jsonl",
+                  "in": {"corrected": "text.corrected"}})
     graph = Graph(cfg_from(nodes))
     assert sorted(graph.bus.subscribers_of("text.corrected")) == [
         "sink", "sink2", "vi"
@@ -308,7 +354,12 @@ async def test_two_translators_share_one_correction_pass():
                   "in": "text.corrected", "out": {"text_out": "text.zh"},
                   "target": "zh", "delay_ms": 0})
     nodes.append({"name": "probe", "impl": "collect",
-                  "in": ["text.raw", "text.corrected", "text.out", "text.zh"]})
+                  "in": {
+                      "raw": "text.raw",
+                      "corrected": "text.corrected",
+                      "translated": "text.out",
+                      "translated_secondary": "text.zh",
+                  }})
 
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)
@@ -423,6 +474,10 @@ def test_chain_shorthand_skips_omitted_stages():
     ]
     # With no corrector, the translator reads the ASR topic directly.
     assert cfg.node("translate").inputs == {"text_in": "text.raw"}
+    assert cfg.nodes[-1].inputs == {
+        "raw": "text.raw",
+        "translated": "text.out",
+    }
     validate(cfg)
 
 
@@ -435,6 +490,11 @@ def test_chain_shorthand_wires_the_full_pipeline():
     )
     assert cfg.node("asr").inputs == {"audio": "utterance.speech"}
     assert cfg.node("translate").inputs == {"text_in": "text.corrected"}
+    assert cfg.nodes[-1].inputs == {
+        "raw": "text.raw",
+        "corrected": "text.corrected",
+        "translated": "text.out",
+    }
     validate(cfg)
 
 
@@ -508,7 +568,7 @@ async def test_segmenter_drain_flushes_the_final_utterance():
         {"name": "vad", "impl": "energy", "in": "audio.raw", "out": "utterance.speech"},
         {"name": "asr", "impl": "mock_transcriber",
          "in": "utterance.speech", "out": "text.raw", "delay_ms": 0},
-        {"name": "sink", "impl": "collect", "in": ["text.raw"]},
+        {"name": "sink", "impl": "collect", "in": {"raw": "text.raw"}},
     ]
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)

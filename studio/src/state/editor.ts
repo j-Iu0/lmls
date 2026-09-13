@@ -104,8 +104,8 @@ export const commands = {
         id: crypto.randomUUID(),
         source,
         target,
-        sourceHandle,
-        targetHandle,
+        sourceHandle: sourceHandle!,
+        targetHandle: targetHandle!,
       }],
     });
     return null;

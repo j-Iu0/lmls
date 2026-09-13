@@ -29,7 +29,11 @@ class JsonlSink(Module):
             a complete log, which matters when the thing you are debugging is a hang.
     """
 
-    inputs: ClassVar[dict[str, type]] = {"text": TextFrame}
+    inputs: ClassVar[dict[str, type]] = {
+        "raw": TextFrame,
+        "corrected": TextFrame,
+        "translated": TextFrame,
+    }
     outputs: ClassVar[dict[str, type]] = {}
 
     def __init__(
