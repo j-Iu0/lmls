@@ -14,7 +14,7 @@ import {
 import { runtime, timestamp } from '../runtime';
 import type { Caption } from '../runtime';
 import { textEndpoints } from '../domain/backend';
-import { editor } from '../state/editor';
+import { commands, editor } from '../state/editor';
 import { useStore } from '../state/useStore';
 import { IconButton } from './Controls';
 
@@ -27,7 +27,7 @@ export function SubtitleDock(
   },
 ) {
   const s = useStore(runtime);
-  const { document } = useStore(editor);
+  const { document, locked } = useStore(editor);
   const [height, setHeight] = useState(230),
     [collapsed, setCollapsed] = useState(false),
     [expanded, setExpanded] = useState(false);
@@ -40,9 +40,11 @@ export function SubtitleDock(
   // names are scoped by module, so labels pair each node with its ports. The
   // media sources' overlay picker uses the same list.
   const endpoints = new Map<string, string[]>();
+  const topics = new Map<string, string>();
   for (const e of textEndpoints(document)) {
     const ports_ = endpoints.get(e.node) ?? [];
     if (!ports_.includes(e.port)) endpoints.set(e.node, [...ports_, e.port]);
+    topics.set(e.id, e.topic);
   }
   // Selections follow the listed endpoints so a removed node's rows leave the
   // feed instead of lingering without their checkbox.
@@ -165,17 +167,26 @@ export function SubtitleDock(
                 <span className='endpoint-node'>{node}</span>
                 {portNames.map((port) => {
                   const id = `${node}:${port}`;
+                  // An unwired port publishes nothing until the run assigns it a
+                  // topic; checking it wires the endpoint, which needs an edit.
+                  const unwired = topics.get(id) === '';
                   return (
                     <label key={port}>
                       <input
                         type='checkbox'
+                        disabled={unwired && locked}
                         checked={active.includes(id)}
-                        onChange={(e) =>
-                          setPicked(
-                            e.target.checked ? [...active, id] : active.filter((p) => p !== id),
-                          )}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            if (unwired && !commands.watch({ node, port })) return;
+                            setPicked([...active, id]);
+                          } else {setPicked(active.filter((p) =>
+                              p !== id
+                            ));}
+                        }}
                       />
                       {port}
+                      {unwired && <span className='endpoint-unwired'>unwired</span>}
                     </label>
                   );
                 })}

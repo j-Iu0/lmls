@@ -20,7 +20,13 @@ export interface CatalogEntry {
   impl: string;
   inputs: Record<string, string>;
   outputs: Record<string, string>;
-  options: { name: string; default: Value; required: boolean; annotation: string }[];
+  options: {
+    name: string;
+    default: Value;
+    required: boolean;
+    annotation: string;
+    choices?: string[];
+  }[];
   description?: string;
   error?: string;
 }
@@ -47,6 +53,12 @@ const hints: Record<string, Partial<Field>> = {
   max_flatness: { label: 'Maximum flatness', type: 'range', min: 0, max: 1, step: 0.01 },
   beam_size: { type: 'range', min: 1, max: 10, step: 1 },
   context_lines: { type: 'range', min: 0, max: 20, step: 1 },
+  pulse: {
+    label: 'System audio',
+    type: 'select',
+    nullable: true,
+    labels: { monitor: 'Default output · all applications' },
+  },
   target: {
     label: 'Translate to',
     type: 'select',
@@ -62,6 +74,7 @@ const primary = new Set([
   'delay_ms',
   'path',
   'url',
+  'pulse',
 ]);
 export function fieldFor(key: string, value: Value, annotation = ''): Field {
   return {
@@ -125,6 +138,7 @@ export function installCatalog(entries: CatalogEntry[]) {
       fields: entry.options.filter((o) => !['stream', 'config'].includes(o.name)).map((o) => ({
         ...fieldFor(o.name, o.default, o.annotation),
         required: o.required,
+        ...(o.choices ? { choices: o.choices } : {}),
       })),
     };
   }
@@ -237,6 +251,32 @@ export function fromBackend(config: BackendConfig): Document {
   };
 }
 
+/** Ensure a text endpoint's port will publish: a topic-less port gains the topic
+ * the run will publish, exactly as if it had been connected. A port that already
+ * publishes is returned unchanged, so an existing topic is never rewritten. */
+export function attachEndpoint(
+  doc: Document,
+  endpoint: { node: string; port: string },
+): Document {
+  const target = doc.nodes.find((n) => n.name === endpoint.node);
+  if (!target || publishedOutputs(doc).get(target.id)?.[endpoint.port]) return doc;
+  const raw = n_raw(target);
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      n.name === endpoint.node
+        ? {
+          ...n,
+          raw: {
+            ...raw,
+            outputs: { ...raw.outputs, [endpoint.port]: `${n.name}.${endpoint.port}` },
+          },
+        }
+        : n
+    ),
+  };
+}
+
 /** Attach a media source's subtitle overlay to a text endpoint. An endpoint
  * without a topic is wired on the spot: its port gains the topic the run will
  * publish, exactly as if it had been connected. Clearing detaches the overlay
@@ -252,27 +292,26 @@ export function attachOverlay(
       nodes: doc.nodes.map((n) => n.id === source ? { ...n, overlay: '', autoPause: false } : n),
     };
   }
-  const target = doc.nodes.find((n) => n.name === endpoint.node);
-  if (!target) return doc;
-  const topic = publishedOutputs(doc).get(target.id)?.[endpoint.port] ??
-    `${target.name}.${endpoint.port}`;
+  const wired = attachEndpoint(doc, endpoint);
+  const target = wired.nodes.find((n) => n.name === endpoint.node);
+  if (!target) return wired;
+  const topic = publishedOutputs(wired).get(target.id)?.[endpoint.port];
+  if (topic === undefined) return wired;
   return {
-    ...doc,
-    nodes: doc.nodes.map((n) => {
-      if (n.name === endpoint.node) {
-        const raw = n.raw ?? {
-          name: n.name,
-          impl: n.kind,
-          enabled: n.enabled ?? true,
-          mode: n.mode ?? 'default',
-          inputs: {},
-          outputs: {},
-          options: structuredClone(n.options),
-        };
-        return { ...n, raw: { ...raw, outputs: { ...raw.outputs, [endpoint.port]: topic } } };
-      }
-      return n.id === source ? { ...n, overlay: topic } : n;
-    }),
+    ...wired,
+    nodes: wired.nodes.map((n) => n.id === source ? { ...n, overlay: topic } : n),
+  };
+}
+
+function n_raw(n: Document['nodes'][number]) {
+  return n.raw ?? {
+    name: n.name,
+    impl: n.kind,
+    enabled: n.enabled ?? true,
+    mode: n.mode ?? 'default',
+    inputs: {},
+    outputs: {},
+    options: structuredClone(n.options),
   };
 }
 

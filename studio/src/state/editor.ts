@@ -1,6 +1,6 @@
 import { connectionError, example, makeNode } from '../domain/model.ts';
 import type { Document, Kind, PipelineNode, Value } from '../domain/model.ts';
-import { attachOverlay, textEndpoints } from '../domain/backend.ts';
+import { attachEndpoint, attachOverlay, textEndpoints } from '../domain/backend.ts';
 import { createStore } from './store.ts';
 
 export const editor = createStore({
@@ -44,6 +44,10 @@ export const commands = {
   /** Attach or clear a source's subtitle overlay; wiring the endpoint if needed. */
   overlay(source: string, endpoint: { node: string; port: string } | null) {
     return commit(attachOverlay(editor.get().document, source, endpoint));
+  },
+  /** Watch a text endpoint in the subtitle monitor; wiring it if it has no topic. */
+  watch(endpoint: { node: string; port: string }) {
+    return commit(attachEndpoint(editor.get().document, endpoint));
   },
   add(kind: Kind, position: PipelineNode['position']) {
     const doc = editor.get().document;

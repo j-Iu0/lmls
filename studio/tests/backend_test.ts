@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import {
+  attachEndpoint,
   attachOverlay,
   fromBackend,
   installCatalog,
@@ -7,7 +8,7 @@ import {
   toBackend,
 } from '../src/domain/backend.ts';
 import type { BackendConfig, CatalogEntry } from '../src/domain/backend.ts';
-import { connectionError, makeNode } from '../src/domain/model.ts';
+import { catalog, connectionError, makeNode } from '../src/domain/model.ts';
 import { mapSnapshot } from '../src/runtime/backend.ts';
 import type { Snapshot } from '../src/runtime/backend.ts';
 import type { RuntimeSnapshot } from '../src/runtime/types.ts';
@@ -148,6 +149,22 @@ Deno.test('attaching an overlay wires the endpoint it needs', () => {
   assert(cleared.nodes.find((n) => n.id === src.id)!.overlay === '');
   assert(cleared.nodes.find((n) => n.id === src.id)!.autoPause === false);
 });
+Deno.test('watching a topic-less endpoint wires it without touching any overlay', () => {
+  const doc = fromBackend(fixtures.configs['mock.toml']);
+  assert(textEndpoints(doc).find((e) => e.id === 'vi:corrected')!.topic === '');
+  const watched = attachEndpoint(doc, { node: 'vi', port: 'corrected' });
+  assert(textEndpoints(watched).find((e) => e.id === 'vi:corrected')!.topic === 'vi.corrected');
+  equal(toBackend(watched).nodes.find((n) => n.name === 'vi')!.outputs, {
+    text_out: 'text.out',
+    corrected: 'vi.corrected',
+  });
+  // Watching a publishing endpoint never rewrites its topic.
+  const republished = attachEndpoint(watched, { node: 'vi', port: 'text_out' });
+  equal(toBackend(republished).nodes.find((n) => n.name === 'vi')!.outputs, {
+    text_out: 'text.out',
+    corrected: 'vi.corrected',
+  });
+});
 Deno.test('real port types distinguish both outputs of translators and reject incompatible links', () => {
   const doc = fromBackend(fixtures.configs['mock.toml']);
   const vi = doc.nodes.find((n) => n.kind === 'mock_translator')!;
@@ -174,6 +191,47 @@ Deno.test('disconnect removes subscription; orphan topics are retained for serve
   const output = doc.nodes.find((n) => n.kind === 'stdout_pretty')!;
   doc.edges = doc.edges.filter((e) => e.target !== output.id);
   equal(toBackend(doc).nodes.find((n) => n.name === output.name)?.inputs, {});
+});
+Deno.test('catalog choices render a labelled system-audio select that round trips', () => {
+  const entries: CatalogEntry[] = [{
+    impl: 'ffmpeg',
+    inputs: {},
+    outputs: { audio: 'AudioFrame' },
+    options: [
+      { name: 'url', default: null, required: false, annotation: 'str | None' },
+      {
+        name: 'pulse',
+        default: null,
+        required: false,
+        annotation: 'str | bool | None',
+        choices: ['monitor', 'alsa_output.spk.monitor'],
+      },
+    ],
+  }];
+  installCatalog(entries);
+  const pulse = catalog['ffmpeg'].fields.find((f) => f.key === 'pulse')!;
+  assert(pulse.type === 'select');
+  assert(pulse.nullable === true);
+  equal(pulse.choices, ['monitor', 'alsa_output.spk.monitor']);
+  assert(pulse.labels!['monitor'] === 'Default output · all applications');
+  // An 'off' select choice is stored as null and survives the round trip.
+  const doc = fromBackend({
+    nodes: [{
+      name: 'src',
+      impl: 'ffmpeg',
+      enabled: true,
+      mode: 'default',
+      inputs: {},
+      outputs: { audio: 'audio.raw' },
+      options: { pulse: 'monitor', realtime: true },
+    }],
+    settings: {},
+    editor: {},
+  });
+  assert(doc.nodes[0].options.pulse === 'monitor');
+  doc.nodes[0].options.pulse = null;
+  equal(toBackend(doc).nodes[0].options, { pulse: null, realtime: true });
+  installCatalog(fixtures.catalog);
 });
 Deno.test('real snapshots retain segment identity, exact service metrics and generation-bounded history', () => {
   const config = fixtures.configs['mock.toml'];

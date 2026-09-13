@@ -113,6 +113,19 @@
   align-items: center;
   gap: 5px;
 }
+.endpoint-picker label input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.endpoint-unwired {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7d8590;
+  border: 1px solid #3b424b;
+  border-radius: 3px;
+  padding: 0 4px;
+}
 .caption-feed {
   overflow: auto;
   flex: 1;
