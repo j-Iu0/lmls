@@ -51,6 +51,7 @@ import { IconButton } from './components/Controls';
 import { SubtitleDock } from './components/SubtitleDock';
 import { Profiler } from './components/Profiler';
 import { bindMiddlePan } from './canvas/middlePan';
+import { placePopup } from './canvas/popupPosition';
 
 const nodeTypes = { pipeline: PipelineNode };
 /* Keep fitted content clear of the floating top and bottom controls. */
@@ -58,6 +59,7 @@ const fitPadding = { top: '88px', bottom: '82px', left: '26px', right: '26px' } 
 type Popup = {
   x: number;
   y: number;
+  maxHeight: number;
   flow: { x: number; y: number };
   node?: string;
   origin?: ConnectionOrigin;
@@ -210,9 +212,14 @@ export function App() {
     (x: number, y: number, node?: string, origin?: ConnectionOrigin) => {
       setFileMenu(false);
       setSearch('');
+      const bounds = canvas.current?.getBoundingClientRect() ?? {
+        left: 0,
+        top: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
       setPopup({
-        x: Math.max(12, Math.min(x, window.innerWidth - 300)),
-        y: Math.max(76, Math.min(y, window.innerHeight - 430)),
+        ...placePopup(x, y, bounds),
         flow: flow.screenToFlowPosition({ x, y }),
         node,
         origin,
@@ -508,7 +515,7 @@ export function App() {
         {popup && (
           <div
             className='node-library floating-panel'
-            style={{ left: popup.x, top: popup.y }}
+            style={{ left: popup.x, top: popup.y, maxHeight: popup.maxHeight }}
             role='dialog'
             aria-label='Add node or edit selection'
           >

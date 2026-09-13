@@ -313,7 +313,7 @@ kbd {
 .node-library {
   position: absolute;
   z-index: 20;
-  width: 284px;
+  width: min(284px, calc(100% - 24px));
   overflow: hidden;
 }
 .library-search {
@@ -595,8 +595,8 @@ kbd {
   line-height: 1.5;
 }
 .node-library {
-  max-height: calc(100dvh - 100px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 @media (max-width: 650px) {
   .document-name {
