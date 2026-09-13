@@ -4,8 +4,6 @@ import Quickshell
 FloatingWindow {
     id: root
     property bool shown: true
-    property string sourceText: ""
-    property string translationText: ""
     property var history: []
     property int sourceFontSize: 28
     property int translationFontSize: 32
@@ -22,8 +20,6 @@ FloatingWindow {
         id: chrome
         anchors.fill: parent
         shown: root.shown
-        sourceText: root.sourceText
-        translationText: root.translationText
         history: root.history
         sourceFontSize: root.sourceFontSize
         translationFontSize: root.translationFontSize

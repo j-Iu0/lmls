@@ -282,9 +282,9 @@ seek semantics, and justification for every runtime extension.
 ### Quickshell subtitle window
 
 On Wayland, the [Quickshell subtitle window](frontends/quickshell/README.md) is a
-standalone translucent floating window showing bilingual captions with a history
-view, source/translation toggles, and drag/resize controls. It connects directly
-to the WebSocket below and is tested on niri.
+standalone translucent floating window showing a scrolling bilingual transcript
+with a history view, source/translation toggles, and drag/resize controls. It
+connects directly to the WebSocket below and is tested on niri.
 
 ### Existing WebSocket sink
 

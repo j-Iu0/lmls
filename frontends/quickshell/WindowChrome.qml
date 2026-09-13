@@ -3,8 +3,6 @@ import QtQuick
 Item {
     id: root
     property bool shown: true
-    property string sourceText: ""
-    property string translationText: ""
     property var history: []
     property int minimumWidth: 480
     property int minimumHeight: 260
@@ -73,8 +71,6 @@ Item {
         width: parent.width
         height: parent.height - 40
         visible: root.shown
-        sourceText: root.sourceText
-        translationText: root.translationText
         history: root.history
         sourceFontSize: root.sourceFontSize
         translationFontSize: root.translationFontSize

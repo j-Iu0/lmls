@@ -1,10 +1,11 @@
 # Quickshell subtitle window
 
 A standalone subtitle frontend for `lmls`. It connects to the pipeline's WebSocket
-sink and shows the newest utterance in a normal floating window: source text above
-one selected translation. Raw transcription appears immediately; corrections and
-translations update the same block in place. A history view keeps earlier segments
-reviewable while live transcription continues.
+sink and shows subtitles in a normal floating window as a scrolling transcript:
+each segment lists the source line above its selected translation, with the newest
+segment at the bottom. Raw transcription appears immediately; corrections and
+translations update their segment in place. The list follows new segments as they
+arrive — unless you have scrolled up to review, in which case the view stays put.
 
 ## Requirements and desktop support
 
@@ -60,9 +61,10 @@ expired text stays hidden.
 
 - Drag the title bar to move the window; drag any edge or corner to resize.
   Compositor-enforced limits keep the window between 480x260 and 1600x1000.
-- `Source` and `Translation` toggle the two caption lines independently.
-- `History` lists retained segments (oldest first); `Return to live` jumps back to
-  the newest subtitle. Live captions keep arriving while you review.
+- `Source` and `Translation` toggle the two lines of every segment independently.
+- The list autoscrolls to the newest segment while you are at the bottom; scroll
+  up to read earlier segments and the view stays there until you scroll back
+  down (scrolling to the bottom resumes autoscroll).
 - `Hide` collapses the window to its title bar; `Show` restores it.
 - `Quit` closes the window and the Quickshell instance.
 
@@ -155,10 +157,10 @@ node frontends/quickshell/tests/subtitles.test.cjs
 
 The Qt 6 runner path above is for Arch Linux. Use your distro's Qt 6 executable;
 an unqualified `qmltestrunner` can select Qt 5. The QML tests run offscreen and
-cover the panel (history, return-to-live, toggles, fonts, backing opacity), the
-window chrome (drag and resize requests, hide/quit, size limits), and the stream
-against real loopback WebSockets (receive, malformed JSON, reconnect, session
-reset, expiry).
+cover the panel (history ordering, autoscroll, toggles, fonts, backing opacity),
+the window chrome (drag and resize requests, hide/quit, size limits), and the
+stream against real loopback WebSockets (receive, malformed JSON, reconnect,
+session reset, expiry).
 
 The live niri smoke test is opt-in because it briefly opens the window:
 

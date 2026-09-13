@@ -3,9 +3,9 @@ import QtTest
 import ".." as Overlay
 
 TestCase {
-    visible: true
     id: testCase
     name: "SubtitleControls"
+    visible: true
     width: 1000
     height: 500
     when: windowShown
@@ -14,46 +14,74 @@ TestCase {
         id: panel
         width: 960
         height: 400
-        sourceText: "Current source"
-        translationText: "Bản dịch"
         history: [{segmentId: "one", source: "Earlier source", translation: "Trước đó"}]
+    }
+
+    function historyList() {
+        return findChild(panel, "historyList");
+    }
+
+    function firstEntry() {
+        var item = null;
+        tryVerify(function () {
+            item = historyList().itemAtIndex(0);
+            return item && findChild(item, "historySource");
+        });
+        return item;
     }
 
     function test_font_sizes_and_backing_opacity() {
         panel.sourceFontSize = 20;
         panel.translationFontSize = 26;
-        compare(findChild(panel, "liveSource").font.pixelSize, 20);
-        compare(findChild(panel, "liveTranslation").font.pixelSize, 26);
+        var first = firstEntry();
+        compare(findChild(first, "historySource").font.pixelSize, 20);
+        compare(findChild(first, "historyTranslation").font.pixelSize, 26);
         panel.backingOpacity = 0.5;
         compare(panel.color.a, 0.5);
     }
 
     function test_source_and_translation_toggles() {
+        panel.history = [{segmentId: "one", source: "Earlier source", translation: "Trước đó"}];
+        var first = firstEntry();
         var sourceToggle = findChild(panel, "sourceToggle");
         var translationToggle = findChild(panel, "translationToggle");
         verify(sourceToggle.checked);
         verify(translationToggle.checked);
         mouseClick(sourceToggle);
         verify(!panel.showSource);
-        verify(!findChild(panel, "liveSource").visible);
-        verify(findChild(panel, "liveTranslation").visible);
+        verify(!findChild(first, "historySource").visible);
+        verify(findChild(first, "historyTranslation").visible);
         mouseClick(translationToggle);
         verify(!panel.showTranslation);
-        verify(!findChild(panel, "liveTranslation").visible);
+        verify(!findChild(first, "historyTranslation").visible);
         mouseClick(sourceToggle);
         verify(panel.showSource);
-        verify(findChild(panel, "liveSource").visible);
+        verify(findChild(first, "historySource").visible);
     }
 
-    function test_history() {
-        mouseClick(findChild(panel, "historyButton"));
-        compare(panel.viewingHistory, true);
-        verify(findChild(panel, "historyList").visible);
-        panel.sourceText = "New live source";
-        panel.history = panel.history.concat([{segmentId: "two", source: "New live source", translation: "Mới"}]);
-        compare(panel.viewingHistory, true);
-        mouseClick(findChild(panel, "historyButton"));
-        compare(panel.viewingHistory, false);
-        compare(findChild(panel, "liveSource").text, "New live source");
+    function test_history_lists_segments_oldest_first() {
+        panel.history = [
+            {segmentId: "one", source: "First", translation: "Một"},
+            {segmentId: "two", source: "Second", translation: "Hai"},
+        ];
+        var view = historyList();
+        tryVerify(function () { return view.itemAtIndex(0); });
+        compare(view.itemAtIndex(0).segmentId, "one");
+        compare(view.itemAtIndex(1).segmentId, "two");
+    }
+
+    function test_new_entries_autoscroll_when_at_bottom() {
+        var view = historyList();
+        var rows = [];
+        for (var i = 0; i < 40; ++i)
+            rows.push({segmentId: "s" + i, source: "s" + i, translation: "t" + i});
+        panel.history = rows;
+        tryVerify(function () { return view.atYEnd; });
+        view.contentY = 0;
+        panel.history = rows.concat([{segmentId: "late", source: "late", translation: "muộn"}]);
+        compare(view.contentY, 0);
+        view.positionViewAtEnd();
+        panel.history = panel.history.concat([{segmentId: "later", source: "later", translation: "sau"}]);
+        tryVerify(function () { return view.atYEnd; });
     }
 }

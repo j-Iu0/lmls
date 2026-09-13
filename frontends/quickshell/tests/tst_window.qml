@@ -14,8 +14,6 @@ TestCase {
         id: chrome
         width: 900
         height: 460
-        sourceText: "Live source"
-        translationText: "Bản dịch"
         history: [{segmentId: "one", source: "Earlier source", translation: "Trước đó"}]
     }
 
@@ -48,11 +46,13 @@ TestCase {
         compare(quitSpy.count, 1);
     }
 
-    function test_content_shows_live_subtitles() {
-        var source = findChild(chrome, "liveSource");
-        compare(source.text, "Live source");
-        chrome.translationText = "Mới";
-        compare(findChild(chrome, "liveTranslation").text, "Mới");
+    function test_content_shows_subtitle_history() {
+        var list = findChild(chrome, "historyList");
+        tryVerify(function () {
+            return list.itemAtIndex(0) && findChild(list.itemAtIndex(0), "historySource");
+        });
+        compare(findChild(list.itemAtIndex(0), "historySource").text, "Earlier source");
+        compare(findChild(list.itemAtIndex(0), "historyTranslation").text, "Trước đó");
     }
 
     function test_size_limits() {

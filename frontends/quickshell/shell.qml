@@ -26,8 +26,6 @@ ShellRoot {
             || Quickshell.screens[0] || null
         implicitWidth: settings.initialWidth
         implicitHeight: settings.initialHeight
-        sourceText: stream.sourceText
-        translationText: stream.translationText
         history: stream.history
         sourceFontSize: settings.sourceFontSize
         translationFontSize: settings.translationFontSize
