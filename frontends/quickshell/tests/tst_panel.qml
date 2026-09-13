@@ -65,7 +65,7 @@ TestCase {
             {segmentId: "two", source: "Second", translation: "Hai"},
         ];
         var view = historyList();
-        tryVerify(function () { return view.itemAtIndex(0); });
+        tryVerify(function () { return view.itemAtIndex(0) && view.itemAtIndex(1); });
         compare(view.itemAtIndex(0).segmentId, "one");
         compare(view.itemAtIndex(1).segmentId, "two");
     }
@@ -77,11 +77,19 @@ TestCase {
             rows.push({segmentId: "s" + i, source: "s" + i, translation: "t" + i});
         panel.history = rows;
         tryVerify(function () { return view.atYEnd; });
+        var pinned = view.contentY;
+        var last = rows[rows.length - 1];
+        panel.history = rows.slice(0, -1).concat([{
+            segmentId: last.segmentId,
+            source: last.source + " extended with a long trailing line of text that must wrap onto another line to grow the row height",
+            translation: last.translation,
+        }]);
+        tryVerify(function () { return view.atYEnd && view.contentY > pinned; });
         view.contentY = 0;
-        panel.history = rows.concat([{segmentId: "late", source: "late", translation: "muộn"}]);
+        panel.history = panel.history.concat([{segmentId: "later", source: "later", translation: "sau"}]);
         compare(view.contentY, 0);
         view.positionViewAtEnd();
-        panel.history = panel.history.concat([{segmentId: "later", source: "later", translation: "sau"}]);
+        panel.history = panel.history.concat([{segmentId: "later2", source: "later2", translation: "sau2"}]);
         tryVerify(function () { return view.atYEnd; });
     }
 }

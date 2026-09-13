@@ -17,7 +17,6 @@ Rectangle {
     clip: true
 
     onHistoryChanged: {
-        var atEnd = historyList.atYEnd;
         // Keep existing delegates/scroll position when incoming text updates history.
         for (var i = entries.count - 1; i >= 0; --i) {
             if (!history.some(row => row.segmentId === entries.get(i).segmentId))
@@ -29,12 +28,11 @@ Rectangle {
             else
                 entries.set(j, history[j]);
         }
-        if (atEnd)
-            historyList.positionViewAtEnd();
     }
     ListModel { id: entries }
 
     ColumnLayout {
+        id: layout
         anchors.fill: parent
         anchors.margins: 16
         spacing: 10
@@ -72,6 +70,12 @@ Rectangle {
             spacing: 16
             model: entries
             ScrollBar.vertical: ScrollBar { }
+
+            // Follow the newest content until the user scrolls away from the end;
+            // extended text and appended segments reposition via content height.
+            property bool follow: true
+            onContentYChanged: follow = atYEnd;
+            onContentHeightChanged: if (follow) Qt.callLater(positionViewAtEnd);
             delegate: Column {
                 id: entry
                 required property string segmentId
