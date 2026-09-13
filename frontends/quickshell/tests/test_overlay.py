@@ -33,7 +33,6 @@ async def test_live_overlay_receives_subtitles_and_exposes_ipc_controls(tmp_path
             "quickshell", "ipc", "--pid", str(process.pid), "call", "--", "subtitles", command,
         ], text=True).strip()
 
-    focus_before = niri("focused-window")
     async with serve(client_connected, "127.0.0.1", 0) as server:
         port = server.sockets[0].getsockname()[1]
         environment = dict(os.environ, LMLS_WS_URL=f"ws://127.0.0.1:{port}")

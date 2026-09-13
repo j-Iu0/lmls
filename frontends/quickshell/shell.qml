@@ -24,8 +24,8 @@ ShellRoot {
         id: window
         screen: Quickshell.screens.find(s => s.name === settings.monitor)
             || Quickshell.screens[0] || null
-        width: settings.initialWidth
-        height: settings.initialHeight
+        implicitWidth: settings.initialWidth
+        implicitHeight: settings.initialHeight
         sourceText: stream.sourceText
         translationText: stream.translationText
         history: stream.history

@@ -12,12 +12,11 @@ FloatingWindow {
     property real backgroundOpacity: 0.78
     signal quitRequested()
 
+    title: "LMLS Subtitles"
     visible: shown
     color: "transparent"
-    minimumWidth: chrome.minimumWidth
-    minimumHeight: chrome.minimumHeight
-    maximumWidth: chrome.maximumWidth
-    maximumHeight: chrome.maximumHeight
+    minimumSize: Qt.size(chrome.minimumWidth, chrome.minimumHeight)
+    maximumSize: Qt.size(chrome.maximumWidth, chrome.maximumHeight)
 
     WindowChrome {
         id: chrome
