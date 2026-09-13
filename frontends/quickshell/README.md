@@ -2,10 +2,11 @@
 
 A standalone subtitle frontend for `lmls`. It connects to the pipeline's WebSocket
 sink and shows subtitles in a normal floating window as a scrolling transcript:
-each segment lists the source line above its selected translation, with the newest
-segment at the bottom. Raw transcription appears immediately; corrections and
-translations update their segment in place. The list follows new segments as they
-arrive — unless you have scrolled up to review, in which case the view stays put.
+each segment lists the source line above its selected translation, each labelled
+with that line's end-to-end pipeline delay, with the newest segment at the bottom.
+Raw transcription appears immediately; corrections and translations update their
+segment in place. The list follows new segments as they arrive — unless you have
+scrolled up to review, in which case the view stays put.
 
 ## Requirements and desktop support
 
@@ -62,6 +63,8 @@ expired text stays hidden.
 - Drag the title bar to move the window; drag any edge or corner to resize.
   Compositor-enforced limits keep the window between 480x260 and 1600x1000.
 - `Source` and `Translation` toggle the two lines of every segment independently.
+- Each line carries a small badge with the end-to-end delay (`end_to_end_ms`) of
+  the event that line was rendered from; lines without a reported delay show none.
 - The list autoscrolls to the newest segment while you are at the bottom; scroll
   up to read earlier segments and the view stays there until you scroll back
   down (scrolling to the bottom resumes autoscroll).

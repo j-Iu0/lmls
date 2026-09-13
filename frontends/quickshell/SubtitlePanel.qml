@@ -18,15 +18,21 @@ Rectangle {
 
     onHistoryChanged: {
         // Keep existing delegates/scroll position when incoming text updates history.
+        // Delays are normalised to numbers (-1 = absent) for stable model roles.
+        var rows = history.map(function (row) {
+            return {segmentId: row.segmentId, source: row.source, translation: row.translation,
+                sourceDelay: typeof row.sourceDelay === "number" ? row.sourceDelay : -1,
+                translationDelay: typeof row.translationDelay === "number" ? row.translationDelay : -1};
+        });
         for (var i = entries.count - 1; i >= 0; --i) {
-            if (!history.some(row => row.segmentId === entries.get(i).segmentId))
+            if (!rows.some(row => row.segmentId === entries.get(i).segmentId))
                 entries.remove(i);
         }
-        for (var j = 0; j < history.length; ++j) {
-            if (j >= entries.count || entries.get(j).segmentId !== history[j].segmentId)
-                entries.insert(j, history[j]);
+        for (var j = 0; j < rows.length; ++j) {
+            if (j >= entries.count || entries.get(j).segmentId !== rows[j].segmentId)
+                entries.insert(j, rows[j]);
             else
-                entries.set(j, history[j]);
+                entries.set(j, rows[j]);
         }
     }
     ListModel { id: entries }
@@ -81,29 +87,55 @@ Rectangle {
                 required property string segmentId
                 required property string source
                 required property string translation
+                required property real sourceDelay
+                required property real translationDelay
                 width: historyList.width - 16
                 spacing: 6
-                Text {
-                    id: sourceText
-                    objectName: "historySource"
+                RowLayout {
                     width: parent.width
-                    visible: root.showSource
-                    text: entry.source
-                    textFormat: Text.PlainText
-                    wrapMode: Text.Wrap
-                    color: "#f1f5f8"
-                    font.pixelSize: root.sourceFontSize
+                    spacing: 8
+                    Text {
+                        id: sourceLine
+                        objectName: "historySource"
+                        Layout.fillWidth: true
+                        visible: root.showSource && entry.source.length > 0
+                        text: entry.source
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        color: "#f1f5f8"
+                        font.pixelSize: root.sourceFontSize
+                    }
+                    Text {
+                        objectName: "historySourceDelay"
+                        visible: sourceLine.visible && entry.sourceDelay >= 0
+                        text: (entry.sourceDelay / 1000).toFixed(1) + " s"
+                        color: "#8fa3b3"
+                        font.pixelSize: 13
+                        Layout.alignment: Qt.AlignBottom
+                    }
                 }
-                Text {
-                    id: translationText
-                    objectName: "historyTranslation"
+                RowLayout {
                     width: parent.width
-                    visible: root.showTranslation
-                    text: entry.translation
-                    textFormat: Text.PlainText
-                    wrapMode: Text.Wrap
-                    color: "#ffe9a6"
-                    font.pixelSize: root.translationFontSize
+                    spacing: 8
+                    Text {
+                        id: translationLine
+                        objectName: "historyTranslation"
+                        Layout.fillWidth: true
+                        visible: root.showTranslation && entry.translation.length > 0
+                        text: entry.translation
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        color: "#ffe9a6"
+                        font.pixelSize: root.translationFontSize
+                    }
+                    Text {
+                        objectName: "historyTranslationDelay"
+                        visible: translationLine.visible && entry.translationDelay >= 0
+                        text: (entry.translationDelay / 1000).toFixed(1) + " s"
+                        color: "#8fa3b3"
+                        font.pixelSize: 13
+                        Layout.alignment: Qt.AlignBottom
+                    }
                 }
                 Rectangle { width: parent.width; height: 1; color: "#304f6374" }
             }

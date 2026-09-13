@@ -41,6 +41,8 @@ TestCase {
     }
 
     function test_source_and_translation_toggles() {
+        panel.showSource = true;
+        panel.showTranslation = true;
         panel.history = [{segmentId: "one", source: "Earlier source", translation: "Trước đó"}];
         var first = firstEntry();
         var sourceToggle = findChild(panel, "sourceToggle");
@@ -68,6 +70,27 @@ TestCase {
         tryVerify(function () { return view.itemAtIndex(0) && view.itemAtIndex(1); });
         compare(view.itemAtIndex(0).segmentId, "one");
         compare(view.itemAtIndex(1).segmentId, "two");
+    }
+
+    function test_delay_labels_follow_their_lines() {
+        panel.history = [
+            {segmentId: "one", source: "First", translation: "Một",
+                sourceDelay: 1234, translationDelay: 2500},
+            {segmentId: "two", source: "Second", translation: "Hai"},
+        ];
+        var view = historyList();
+        tryVerify(function () { return view.itemAtIndex(0) && view.itemAtIndex(1); });
+        var withDelay = view.itemAtIndex(0);
+        compare(findChild(withDelay, "historySourceDelay").text, "1.2 s");
+        compare(findChild(withDelay, "historyTranslationDelay").text, "2.5 s");
+        verify(findChild(withDelay, "historySourceDelay").visible);
+        verify(findChild(withDelay, "historyTranslationDelay").visible);
+        var noDelay = view.itemAtIndex(1);
+        verify(!findChild(noDelay, "historySourceDelay").visible);
+        verify(!findChild(noDelay, "historyTranslationDelay").visible);
+        // Hiding a line hides its delay with it.
+        mouseClick(findChild(panel, "sourceToggle"));
+        verify(!findChild(withDelay = view.itemAtIndex(0), "historySourceDelay").visible);
     }
 
     function test_new_entries_autoscroll_when_at_bottom() {
