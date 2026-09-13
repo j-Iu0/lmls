@@ -53,6 +53,8 @@ import { Profiler } from './components/Profiler';
 import { bindMiddlePan } from './canvas/middlePan';
 
 const nodeTypes = { pipeline: PipelineNode };
+/* Keep fitted content clear of the floating top and bottom controls. */
+const fitPadding = { top: '88px', bottom: '82px', left: '26px', right: '26px' } as const;
 type Popup = {
   x: number;
   y: number;
@@ -125,7 +127,7 @@ function ZoomControls() {
       <span className='divider' />
       <IconButton
         label='Fit graph (F)'
-        onClick={() => flow.fitView({ padding: 0.12, duration: 300 })}
+        onClick={() => flow.fitView({ padding: fitPadding, duration: 300 })}
       >
         <Maximize size={15} />
       </IconButton>
@@ -251,7 +253,7 @@ export function App() {
       ) return;
       if (e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        flow.fitView({ padding: 0.12, duration: 300 });
+        flow.fitView({ padding: fitPadding, duration: 300 });
       }
       if (e.key.toLowerCase() === 'a' && !e.metaKey && !e.ctrlKey && !locked) {
         showPopup(window.innerWidth / 2 - 140, 160);
@@ -345,7 +347,7 @@ export function App() {
               setFileMenu(false);
             }}
             fitView
-            fitViewOptions={{ padding: 0.14, maxZoom: 0.95 }}
+            fitViewOptions={{ padding: fitPadding, maxZoom: 0.95 }}
             minZoom={0.25}
             maxZoom={1.7}
             panOnDrag={false}
@@ -442,7 +444,7 @@ export function App() {
                   backend: { nodes: [], settings: document.backend?.settings ?? {}, editor: {} },
                 });
                 setFileMenu(false);
-                setTimeout(() => flow.fitView({ padding: 0.14 }), 80);
+                setTimeout(() => flow.fitView({ padding: fitPadding }), 80);
               }}
             >
               <FilePlus2 size={15} />New pipeline
@@ -496,7 +498,7 @@ export function App() {
               if (commands.replace(doc)) {
                 setFileMenu(false);
                 notify('Pipeline opened.');
-                setTimeout(() => flow.fitView({ padding: 0.14 }), 80);
+                setTimeout(() => flow.fitView({ padding: fitPadding }), 80);
               }
             } catch (error) {
               notify(error instanceof Error ? error.message : 'Could not open document.');

@@ -135,7 +135,7 @@ kbd {
 }
 .graph-surface {
   position: absolute;
-  inset: 82px 0 65px;
+  inset: 0;
 }
 .react-flow__attribution {
   background: transparent !important;
