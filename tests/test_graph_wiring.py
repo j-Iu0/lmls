@@ -473,7 +473,7 @@ async def test_run_does_not_start_stages_a_driver_already_started():
              "out": "utterance.speech"},
             {"name": "asr", "impl": "mock_transcriber",
              "in": "utterance.speech", "out": "text.raw"},
-            {"name": "ws", "impl": "websocket_server", "in": ["text.raw"],
+            {"name": "ws", "impl": "websocket_server", "in": {"raw": "text.raw"},
              "port": port},
         ])
     )

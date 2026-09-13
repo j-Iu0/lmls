@@ -47,9 +47,18 @@ class WebSocketSink(Module):
         replay: events buffered for clients that connect late.
         send_timeout: a client that cannot accept a message within this window is
             disconnected.
+
+    Three declared input ports, one topic each -- ``raw``, ``corrected``, and
+    ``translated`` -- so the provenance a client needs to order revisions is part
+    of the module's declaration, and the port order matches the positional list
+    wiring used by the shipped configs.
     """
 
-    inputs: ClassVar[dict[str, type]] = {"text": TextFrame}
+    inputs: ClassVar[dict[str, type]] = {
+        "raw": TextFrame,
+        "corrected": TextFrame,
+        "translated": TextFrame,
+    }
     outputs: ClassVar[dict[str, type]] = {}
 
     def __init__(
