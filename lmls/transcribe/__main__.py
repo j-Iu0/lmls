@@ -20,7 +20,7 @@ import typer
 from ..core.audioutil import load_wav
 from ..core.codec import aread_frames, write_event
 from ..core.registry import available, build, resolve
-from ..core.types import SAMPLE_RATE, AudioFrame, Utterance
+from ..core.types import SAMPLE_RATE, AudioFrame, TextFrame, Utterance
 
 app = typer.Typer(add_completion=False, help="Speech to text (transcription module).")
 
@@ -32,7 +32,9 @@ def _transcribe_impls() -> list[str]:
             cls = resolve(name)
         except Exception:  # pragma: no cover - broken optional dep
             continue
-        if set(cls.inputs.values()) == {Utterance}:
+        if set(cls.outputs.values()) == {TextFrame} and set(cls.inputs.values()) in (
+            {Utterance}, {AudioFrame}
+        ):
             out.append(name)
     return out
 
@@ -50,6 +52,12 @@ def run(
     infile: Optional[Path] = typer.Option(None, "--in", help="Audio file to transcribe."),
     raw: bool = typer.Option(False, help="Read f32le PCM frames from stdin."),
     model: Optional[str] = typer.Option(None, help="Override the model id."),
+    key_file: Optional[Path] = typer.Option(
+        None, help="Secret file for cloud backends (Deepgram defaults to .env)."
+    ),
+    key_name: str = typer.Option(
+        "DEEPGRAM", help="Variable name inside the secret file."
+    ),
     segmenter: str = typer.Option("energy", help="energy | silero (standalone path)."),
     text_only: bool = typer.Option(
         False, help="Print plain text instead of JSONL (for reading, not piping)."
@@ -59,14 +67,22 @@ def run(
     options = {"segmenter": segmenter}
     if model:
         options["model"] = model
+    if impl == "deepgram":
+        options["api_key_file"] = str(key_file or Path(".env"))
+        options["api_key_name"] = key_name
     transcriber = build(impl, name=impl, **options)
 
     if raw:
 
         async def pump() -> None:
+            await transcriber.start()
+            if callable(getattr(transcriber, "process_stream", None)):
+                async for frame in transcriber.process_stream(aread_frames()):
+                    _write(frame, text_only)
+                return
+
             from ..segment import make_segmenter
 
-            await transcriber.start()
             segment = make_segmenter(segmenter)
 
             async def utterances():
@@ -88,7 +104,10 @@ def run(
         raise typer.Exit(2)
 
     pcm = load_wav(infile, SAMPLE_RATE)
-    asyncio.run(transcriber.start())
+    # Streaming cloud adapters use a separate synchronous prerecorded client here;
+    # opening their async live client in a short-lived event loop would strand it.
+    if not callable(getattr(transcriber, "process_stream", None)):
+        asyncio.run(transcriber.start())
     t0 = time.perf_counter()
     frames = transcriber.transcribe_array(pcm, SAMPLE_RATE)
     elapsed = time.perf_counter() - t0

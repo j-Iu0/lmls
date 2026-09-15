@@ -41,6 +41,11 @@ class Module(ABC):
       payload (1-to-1), a ``dict`` keyed by output port name (required when the
       module declares multiple outputs), or a ``list`` for the single output port
       (1-to-list).
+    * A full-duplex transform may instead implement
+      ``process_stream(input_stream)`` as an async generator.  The graph supplies
+      the node's single input subscription and publishes values whenever the
+      generator yields them.  This is for protocols such as streaming ASR where
+      outputs arrive independently of individual input frames.
     * ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``
       automatically. ``run`` must be ``async``.
     * Internal state (LLM context windows, DSP state) lives on the instance, never in
@@ -58,6 +63,12 @@ class Module(ABC):
     #: Constructor/config classes whose keyword arguments this wrapper forwards.
     #: Registry introspection uses these for CLI, documentation and API tooling.
     option_sources: ClassVar[tuple[type, ...]] = ()
+
+    #: Secret constructor argument -> (config file option, key-name option, default
+    #: key name).  The registry resolves these before construction, so modules receive
+    #: secret values but never read configuration files themselves.  Public option
+    #: introspection exposes only the file and key-name options.
+    secret_file_options: ClassVar[dict[str, tuple[str, str, str]]] = {}
 
     def __init__(self) -> None:
         # ``name`` is set by the registry after construction; initialised here as an

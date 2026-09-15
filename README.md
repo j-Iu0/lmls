@@ -354,7 +354,7 @@ Available everywhere: `python -m lmls list`
 | input (source) | `mic`, `ffmpeg`, `wav`, `stdin` |
 | denoiser | `passthrough_denoiser`, `highpass_gate`, `spectral`, `noisereduce`, `deepfilternet` |
 | segmenter | `energy`, `silero` |
-| transcriber | `mlx_whisper`, `faster_whisper`, `mock_transcriber` |
+| transcriber | `mlx_whisper`, `faster_whisper`, `deepgram`, `mock_transcriber` |
 | corrector | `mlx_llm_corrector`, `ollama_corrector`, `rules`, `cloud_llm_corrector`, `passthrough_corrector` |
 | translator | `mlx_llm_translator`, `ollama_translator`, `cloud_llm_translator`, `mock_translator` |
 | fused | `fused_llm` (MLX) / `fused_ollama` (Ollama) — corrects and translates in one LLM call |
@@ -362,11 +362,28 @@ Available everywhere: `python -m lmls list`
 
 The **Ollama** adapters are the default wiring: they need `requirements-cpu.txt` (which
 also carries faster-whisper, the default ASR) and a running Ollama server, but no API key.
-The cloud **LLM** adapters (`cloud_llm`, for
-correction and translation) need `requirements-cloud.txt` and an API key, and are off by
-default. Either way no lecture content leaves the machine. There is no cloud
-speech-to-text adapter: transcription is local only, which is the stage where the raw
-audio lives.
+The cloud **LLM** adapters (`cloud_llm`, for correction and translation) need
+`requirements-cloud.txt` and an API key. Deepgram transcription is a separate, explicit
+cloud option:
+
+```bash
+# .env contains: DEEPGRAM=your-key
+pip install -r requirements-deepgram.txt
+lmls run -c config/deepgram.toml
+```
+
+Deepgram receives `audio.raw` continuously and performs its own VAD and endpointing, so
+`config/deepgram.toml` deliberately has no segmenter node. Raw lecture audio leaves the
+machine when this preset is selected. All other shipped presets remain local by default.
+Stable Deepgram `is_final` chunks are translated immediately, with sentence-punctuation
+splitting and a 28-word fallback cap; the adapter does not wait for a potentially much
+longer `speech_final` turn.
+The config contains only `api_key_file = ".env"` and `api_key_name = "DEEPGRAM"`;
+the registry reads that named value and passes it to the module constructor. The module
+does not inspect the environment or open the key file itself.
+Because Whisper consumes `Utterance` while Deepgram consumes `AudioFrame`, use the
+Deepgram preset rather than replacing Whisper in an existing topology with
+`--transcribe deepgram`.
 
 ---
 

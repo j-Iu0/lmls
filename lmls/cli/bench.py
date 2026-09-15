@@ -71,6 +71,12 @@ def _retarget(cfg: GraphConfig, audio: Path, realtime: bool) -> GraphConfig:
     text topic (what the viewer ends up seeing) and one on the raw ASR topic alone, so
     the uncorrected transcript can be scored separately from the displayed one.
     """
+    if not realtime and any(node.impl == "deepgram" for node in cfg.active):
+        raise ValueError(
+            "Deepgram live streaming must be benchmarked in realtime; "
+            "omit --no-realtime"
+        )
+
     for node in list(cfg.nodes):
         if not node.inputs:  # a source: declares no input ports
             node.impl = "wav"
@@ -136,7 +142,7 @@ _DENOISE_IMPLS = {
     "passthrough_denoiser", "highpass_gate", "spectral", "noisereduce",
     "deepfilternet",
 }
-_TRANSCRIBE_IMPLS = {"mock_transcriber", "mlx_whisper", "faster_whisper"}
+_TRANSCRIBE_IMPLS = {"mock_transcriber", "mlx_whisper", "faster_whisper", "deepgram"}
 _CORRECT_IMPLS = {
     "passthrough_corrector", "rules", "mlx_llm_corrector", "ollama_corrector",
     "cloud_llm_corrector",

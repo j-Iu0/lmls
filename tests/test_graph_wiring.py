@@ -14,6 +14,7 @@ import pytest
 
 from lmls.core.config import ConfigError, GraphConfig, chain_config, load_config
 from lmls.core.graph import Graph, GraphError, mermaid, validate
+from lmls.core.interfaces import Module
 from lmls.core.types import AudioFrame, Lineage, TextFrame, Utterance
 
 pytestmark = pytest.mark.asyncio
@@ -33,6 +34,25 @@ def cfg_from(nodes: list[dict]) -> GraphConfig:
 
 
 WAV = "assets/lecture.wav"
+
+
+class StreamingTransformProbe(Module):
+    """Consumes the complete input before yielding, as remote stream finalisation can."""
+
+    inputs = {"audio": AudioFrame}
+    outputs = {"text": TextFrame}
+
+    async def process_stream(self, frames):
+        last = None
+        count = 0
+        async for last in frames:
+            count += 1
+        assert last is not None
+        await asyncio.sleep(0)
+        yield TextFrame(
+            f"received {count} frames",
+            lineage=Lineage(segment_id="stream-1", t_audio_end=last.t_capture),
+        )
 
 
 def full_pipeline(**overrides) -> list[dict]:
@@ -329,6 +349,33 @@ async def test_minimal_pipeline_is_just_source_vad_asr_translate():
     assert graph.metrics.counts.get("vi", 0) > 0
 
 
+async def test_streaming_transform_can_emit_after_its_input_stream_ends(monkeypatch):
+    """Full-duplex providers are allowed to deliver final text after the last audio
+    frame; the graph must keep the output side alive long enough to publish it."""
+    from lmls.core.registry import REGISTRY
+
+    monkeypatch.setitem(
+        REGISTRY,
+        "test_streaming_transform",
+        f"{__name__}:StreamingTransformProbe",
+    )
+    nodes = [
+        {"name": "src", "impl": "wav", "out": "audio.raw",
+         "path": WAV, "realtime": False},
+        {"name": "asr", "impl": "test_streaming_transform",
+         "in": "audio.raw", "out": "text.raw"},
+        {"name": "sink", "impl": "collect", "in": {"raw": "text.raw"}},
+    ]
+    graph = Graph(cfg_from(nodes))
+    await graph.run(timeout=20)
+
+    collector = next(n.stage for n in graph.nodes if n.config.impl == "collect")
+    assert len(collector.events) == 1
+    assert collector.events[0].text.startswith("received ")
+    assert collector.events[0].is_final
+    assert graph.metrics.stage_counts["asr"] == 1
+
+
 # -- fan-out -----------------------------------------------------------------
 
 
@@ -505,7 +552,8 @@ def test_unknown_chain_stage_is_rejected():
 
 @pytest.mark.parametrize(
     "preset",
-    ["default", "mlx", "mock", "with_denoise", "no_correct", "fused", "bilingual", "video"],
+    ["default", "mlx", "mock", "with_denoise", "no_correct", "fused", "bilingual", "video",
+     "deepgram"],
 )
 def test_every_shipped_preset_is_a_valid_wiring(preset):
     """Presets are documentation. A preset that does not validate is a broken claim."""

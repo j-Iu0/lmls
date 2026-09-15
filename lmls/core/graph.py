@@ -80,6 +80,11 @@ def validate(cfg: GraphConfig) -> list[str]:
                 f"node {n.name!r} ({cls.__name__}) declares output ports "
                 f"{sorted(cls.outputs)} but wires none"
             )
+        if callable(getattr(cls, "process_stream", None)) and len(n.inputs) != 1:
+            raise GraphError(
+                f"node {n.name!r} ({cls.__name__}) is a streaming transform and "
+                "must wire exactly one input topic"
+            )
 
     # A graph needs at least one node that produces without consuming.
     if not any(not cls.inputs for cls in classes.values()):
@@ -473,6 +478,10 @@ class Graph:
 
     async def _run_transform(self, node: BuiltNode) -> None:
         stage = node.stage
+        if callable(getattr(stage, "process_stream", None)):
+            await self._run_stream_transform(node)
+            return
+
         is_async = inspect.iscoroutinefunction(stage.process)
 
         # Multi-input modules run one pump per declared input subscription concurrently.
@@ -485,6 +494,55 @@ class Graph:
         # Input stream exhausted: publish whatever the module still buffers.
         for leftover in stage.drain():
             await self._publish_result(node, leftover, None, 0.0)
+
+    async def _run_stream_transform(self, node: BuiltNode) -> None:
+        """Run a full-duplex transform whose outputs are not input-call responses.
+
+        A Deepgram connection, for example, must keep receiving 20 ms audio frames
+        while transcript events arrive on the other half of the WebSocket.  Waiting
+        for one result from each call to ``process`` would serialize those halves and
+        eventually drop audio.  Streaming transforms therefore own their input loop
+        and yield outputs whenever the remote or local stream produces them.
+        """
+        stage = node.stage
+        stream = stage.process_stream(node.subscriptions[0])
+        if not hasattr(stream, "__aiter__"):
+            raise GraphError(
+                f"{node.config.name}: process_stream must return an async iterator"
+            )
+
+        async with contextlib.aclosing(stream):
+            async for result in stream:
+                # For an asynchronously delivered TextFrame, end-of-audio to yield
+                # time is the useful service-time approximation.  It includes the
+                # network and provider inference delay and preserves the meaning of
+                # the existing ASR latency column.
+                text = self._first_text_frame(result)
+                elapsed = (
+                    max(0.0, time.time() - text.lineage.t_audio_end)
+                    if text is not None and text.lineage.t_audio_end is not None
+                    else 0.0
+                )
+                self.metrics.record_stage(node.config.name, elapsed * 1000)
+                self._emit({"kind": "processing", "node": node.config.name,
+                            "elapsed_ms": elapsed * 1000})
+                await self._publish_result(node, result, None, elapsed)
+
+        # A streaming transform is responsible for provider-side finalisation before
+        # its iterator ends.  ``drain`` remains available for ordinary transforms.
+
+    @staticmethod
+    def _first_text_frame(result: Any) -> TextFrame | None:
+        if isinstance(result, TextFrame):
+            return result
+        if isinstance(result, dict):
+            return next(
+                (value for value in result.values() if isinstance(value, TextFrame)),
+                None,
+            )
+        if isinstance(result, list):
+            return next((value for value in result if isinstance(value, TextFrame)), None)
+        return None
 
     async def _pump(self, node: BuiltNode, sub, is_async: bool) -> None:
         async for payload in sub:

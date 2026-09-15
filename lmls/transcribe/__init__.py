@@ -8,9 +8,10 @@ and benchmark paths.
     mock_transcriber     no model, scripted, deterministic -- CI and demos without a download
     mlx_whisper          default here: Whisper on the M1 GPU through Metal
     faster_whisper       portable CPU fallback (CTranslate2 has no Metal backend)
+    deepgram             optional continuous cloud stream (raw AudioFrames, no segmenter)
 
-Transcription is deliberately local-only: this is the stage that handles raw lecture
-audio, so it is the one where sending data to a third party matters most.
+Transcription is local by default.  Selecting Deepgram is an explicit privacy boundary:
+raw lecture audio leaves the machine, so the shipped default remains Whisper.
 
 Run standalone::
 

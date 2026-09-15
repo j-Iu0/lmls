@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from pathlib import Path
 from typing import Any
 
 #: impl name -> "module.path:ClassName"
@@ -46,6 +47,7 @@ REGISTRY: dict[str, str] = {
     "mock_transcriber": "lmls.transcribe.mock:MockTranscriber",
     "mlx_whisper": "lmls.transcribe.mlx_whisper:MlxWhisperTranscriber",
     "faster_whisper": "lmls.transcribe.faster_whisper:FasterWhisperTranscriber",
+    "deepgram": "lmls.transcribe.deepgram:DeepgramTranscriber",
     # correctors
     "passthrough_corrector": "lmls.correct.passthrough:PassthroughCorrector",
     "rules": "lmls.correct.rules:RuleCorrector",
@@ -75,6 +77,7 @@ _INSTALL_HINTS = {
     "fused_llm": "requirements-mlx.txt",
     "fused_ollama": "requirements-cpu.txt",
     "faster_whisper": "requirements-cpu.txt",
+    "deepgram": "requirements-deepgram.txt",
     "ollama_corrector": "requirements-cpu.txt",
     "ollama_translator": "requirements-cpu.txt",
     "cloud_llm_corrector": "requirements-cloud.txt",
@@ -113,7 +116,55 @@ def option_parameters(cls: type) -> dict[str, inspect.Parameter]:
             if any(t.__name__ in annotation for t in sources):
                 continue
             result[name] = param
+    for secret_name, (file_option, key_option, default_key) in getattr(
+        cls, "secret_file_options", {}
+    ).items():
+        result.pop(secret_name, None)
+        result[file_option] = inspect.Parameter(
+            file_option,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            annotation=str,
+        )
+        result[key_option] = inspect.Parameter(
+            key_option,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=default_key,
+            annotation=str,
+        )
     return result
+
+
+def _resolve_secret_files(cls: type, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Replace configured secret-file references with constructor secret values."""
+    resolved = dict(kwargs)
+    for secret_name, (file_option, key_option, default_key) in getattr(
+        cls, "secret_file_options", {}
+    ).items():
+        path_value = resolved.pop(file_option, None)
+        key_name = resolved.pop(key_option, default_key)
+        if secret_name in resolved:
+            if path_value is not None:
+                raise ValueError(
+                    f"configure either {secret_name!r} or {file_option!r}, not both"
+                )
+            continue
+        if path_value is None:
+            raise ValueError(f"missing required secret-file option {file_option!r}")
+        path = Path(path_value)
+        if not path.is_file():
+            raise FileNotFoundError(f"secret file not found: {path}")
+        try:
+            from dotenv import dotenv_values
+        except ImportError as exc:
+            raise MissingDependency(
+                "reading .env secret files needs python-dotenv; "
+                "install requirements-deepgram.txt"
+            ) from exc
+        value = dotenv_values(path).get(str(key_name))
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"secret file {path} has no nonempty {key_name!r} value")
+        resolved[secret_name] = value.strip()
+    return resolved
 
 
 def resolve(impl: str) -> type:
@@ -142,6 +193,7 @@ def resolve(impl: str) -> type:
 def build(impl: str, name: str = "", **kwargs: Any) -> Any:
     """Instantiate an implementation with the node's config keyword arguments."""
     cls = resolve(impl)
+    kwargs = _resolve_secret_files(cls, kwargs)
     try:
         obj = cls(**kwargs)
     except TypeError as exc:

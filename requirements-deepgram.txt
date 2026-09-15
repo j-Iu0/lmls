@@ -1,0 +1,8 @@
+# Optional cloud speech-to-text backend. Raw audio is sent to Deepgram; the default
+# configurations remain local and do not need this dependency or an API key.
+#
+#   .env contains: DEEPGRAM=your-key
+#   .venv/bin/pip install -r requirements-deepgram.txt
+#   .venv/bin/python -m lmls run -c config/deepgram.toml
+deepgram-sdk>=7,<8
+python-dotenv>=1,<2

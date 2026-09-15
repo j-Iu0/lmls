@@ -1,0 +1,66 @@
+# Optional cloud transcription wiring. Unlike Whisper, Deepgram consumes the continuous
+# audio stream and performs its own VAD/endpointing, so there is deliberately NO local
+# segmenter node in this graph. Raw lecture audio leaves this machine.
+#
+# Prerequisites:
+#   The configured .env file must contain DEEPGRAM=your-key.
+#   .venv/bin/pip install -r requirements-deepgram.txt
+#   ollama pull qwen3.5:4b
+#
+# Run:
+#   lmls run --config config/deepgram.toml
+
+[settings]
+target = "vi"
+
+[[node]]
+name = "mic"
+impl = "mic"
+out = "audio.raw"
+device = "default"
+
+# Deepgram receives canonical 16 kHz mono frames continuously. A 120 ms endpoint favors
+# responsive subtitles; stable chunks are also split below, so continuous speech does
+# not have to reach an acoustic endpoint before translation can begin.
+[[node]]
+name = "asr"
+impl = "deepgram"
+in = "audio.raw"
+out = "text.raw"
+model = "nova-3"
+language = "en"
+endpointing_ms = 120
+smart_format = true
+mip_opt_out = true
+keyterms = ["gradient descent", "neural network", "backpropagation"]
+finalize_on_is_final = true
+split_sentences = true
+max_final_words = 28
+api_key_file = ".env"
+api_key_name = "DEEPGRAM"
+
+[[node]]
+name = "fix_translate"
+impl = "fused_ollama"
+in = "text.raw"
+out = { corrected = "text.corrected", translated = "text.out" }
+target = "vi"
+model = "qwen3.5:4b"
+
+[[node]]
+name = "screen"
+impl = "stdout_pretty"
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
+show_latency = true
+
+[[node]]
+name = "log"
+impl = "jsonl"
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
+path = "logs/session.jsonl"
+
+[[node]]
+name = "ws"
+impl = "websocket_server"
+in = { raw = "text.raw", corrected = "text.corrected", translated = "text.out" }
+port = 8765

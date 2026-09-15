@@ -27,7 +27,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from ..core.config import GraphConfig, chain_config, load_config  # noqa: E402
 from ..core.graph import Graph, mermaid, validate  # noqa: E402
-from ..core.registry import available  # noqa: E402
+from ..core.registry import available, resolve  # noqa: E402
 
 app = typer.Typer(
     add_completion=False,
@@ -72,7 +72,7 @@ _DENOISE_IMPLS = {
     "passthrough_denoiser", "highpass_gate", "spectral", "noisereduce",
     "deepfilternet",
 }
-_TRANSCRIBE_IMPLS = {"mock_transcriber", "mlx_whisper", "faster_whisper"}
+_TRANSCRIBE_IMPLS = {"mock_transcriber", "mlx_whisper", "faster_whisper", "deepgram"}
 _CORRECT_IMPLS = {
     "passthrough_corrector", "rules", "mlx_llm_corrector", "ollama_corrector",
     "cloud_llm_corrector",
@@ -112,7 +112,18 @@ def _resolve(
             else None
         )
         if role and role in overrides:
-            node.impl = overrides[role]
+            replacement = overrides[role]
+            if role == "transcribe" and (
+                set(resolve(node.impl).inputs.values())
+                != set(resolve(replacement).inputs.values())
+            ):
+                raise typer.BadParameter(
+                    f"cannot replace {node.impl!r} with {replacement!r} in place: "
+                    "their audio input types differ. Deepgram consumes audio.raw "
+                    "directly; use config/deepgram.toml (with no segmenter).",
+                    param_hint="--transcribe",
+                )
+            node.impl = replacement
             if node.impl != old_impl and role == "input":
                 # 'device' means different things per impl: a name for 'mic', a boolean
                 # flag for 'ffmpeg'. The old impl's value must not leak into the new one.
