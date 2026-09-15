@@ -75,7 +75,7 @@ def run(
 
         async def handle(frame: TextFrame) -> None:
             t0 = time.perf_counter()
-            out = await corrector.process(frame)
+            out = await corrector.process("text", frame)
             elapsed = (time.perf_counter() - t0) * 1000
             if out is None:
                 return
@@ -126,7 +126,7 @@ def bench(
         for line in cases:
             frame = _frame(line, segment_id="b")
             t0 = time.perf_counter()
-            out = await corrector.process(frame)
+            out = await corrector.process("text", frame)
             ms = (time.perf_counter() - t0) * 1000
             timings.append(ms)
             if out is not None and out.text != line:

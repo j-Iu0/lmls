@@ -99,12 +99,16 @@ class to pick, no kind field to set.
 |---|---|---|---|
 | **Source** | `{}` | one port `{port: T}` | `async def run(self) -> AsyncIterator[T]` |
 | **Transform** | non-empty | non-empty | `process(self, ...)` (variants below) |
-| **Sink** | non-empty | `{}` | `process(self, frame) -> None` |
+| **Sink** | non-empty | `{}` | `process(self, port, frame) -> None` |
 
 Notes:
 
 - A source has exactly **one** output port. The runner publishes every yielded item
   to that port's topic.
+- Every `process` call receives the **input port name** the payload arrived on as
+  its first argument. Modules with several inputs use it to tell streams apart;
+  single-input modules may ignore it. Port names are the stable contract between
+  modules -- topic names are configuration and never reach `process`.
 - `__init__` must call `super().__init__()`; the registry sets `self.name` after
   construction (§8.1).
 
@@ -137,20 +141,27 @@ The four signatures:
 
 ```python
 # 1-to-1
-def process(self, frame: T) -> U: ...
-async def process(self, frame: T) -> U: ...
+def process(self, port: str, frame: T) -> U: ...
+async def process(self, port: str, frame: T) -> U: ...
 
 # 1-to-list (buffer-and-emit; e.g. accumulate small items into larger ones)
-def process(self, frame: T) -> list[U]: ...
+def process(self, port: str, frame: T) -> list[U]: ...
 
 # 1-to-many named outputs (module declares several output ports)
-async def process(self, frame: T) -> dict[str, Any]:
+async def process(self, port: str, frame: T) -> dict[str, Any]:
     # dict keys are output *port names*; the runner routes each value
     # to the topic bound to that port
 ```
 
 A multi-port module **must** return a dict. A bare payload from a multi-port module,
-or a dictionary key that is not a declared output port, is a graph error.
+a dictionary key that is not a declared output port, or a tuple, is a graph error.
+
+A full-duplex transform may implement `process_stream(input_stream)` instead of
+`process`: an async generator receiving one merged stream of `(port_name, payload)`
+pairs for every wired input port. Its yields follow the mirrored convention:
+`(port_name, payload)` tuples routed by port name, or a bare payload or list of
+payloads when the module declares exactly one output port. Yields are dispatched as
+they happen, independent of input arrival.
 
 ### 2.4 Sync vs async
 
@@ -230,7 +241,7 @@ must not need it.
 
 ### 4.2 The finest unit of processing
 
-The finest unit is **one item on one topic**. Each call to `process()` handles exactly
+The finest unit is **one item on one input port**. Each call to `process()` handles exactly
 one item, and each `yield` from a source produces exactly one item. What "one item"
 means is chosen by the producing module, not by the framework: in the audio pipeline
 the unit is a fixed 20 ms frame; a log tailer might emit one line; a network source

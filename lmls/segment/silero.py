@@ -116,7 +116,7 @@ class SileroSegmenter(Module):
         # Model loaded during __init__; just signal readiness.
         self._report_startup(StartupPhase.READY)
 
-    def process(self, frame: AudioFrame) -> list[Utterance]:
+    def process(self, port: str, frame: AudioFrame) -> list[Utterance]:
         return list(self._inner.push(frame))
 
     def drain(self) -> list[Utterance]:

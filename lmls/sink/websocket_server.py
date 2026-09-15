@@ -8,13 +8,13 @@ receives the same event stream the terminal sink renders, and implements the sam
 Wire protocol, one JSON object per message::
 
     {"type": "subtitle",
-     "segment_id": "u0007", "revision": 2, "topic": "text.out",
+     "segment_id": "u0007", "revision": 2, "port": "translated",
      "lang": "vi", "text": "...", "is_final": true,
      "t_audio_end": 1756...,  "t_emit": 1756..., "end_to_end_ms": 2140,
      "stage_latency_ms": {"asr": 310, "fused_llm": 980}, "meta": {...}}
 
 Client rule, the whole of it: keep a block per ``segment_id``; on each message, if
-``revision`` is greater than or equal to the revision already held for that topic/language,
+``revision`` is greater than or equal to the revision already held for that port/language,
 replace that line and leave every other block alone.
 
 A late joiner gets the last ``replay`` events on connect, so a page refreshed mid-lecture
@@ -48,8 +48,9 @@ class WebSocketSink(Module):
         send_timeout: a client that cannot accept a message within this window is
             disconnected.
 
-    Each subtitle stream has its own declared input port. Topic provenance comes from
-    the graph subscription and is preserved in every WebSocket message.
+    Each subtitle stream has its own declared input port. Port provenance -- the
+    stable role of the stream, not the configurable topic name -- is preserved in
+    every WebSocket message.
     """
 
     inputs: ClassVar[dict[str, type]] = {
@@ -104,14 +105,8 @@ class WebSocketSink(Module):
                 await self._server.wait_closed()
             self._server = None
 
-    async def process(self, frame: TextFrame) -> None:
-        """Standalone use has no topic; preserve the original wire format."""
-        await self.process_with_topic(frame, None)
-
-    async def process_with_topic(self, frame: TextFrame, topic: str | None) -> None:
-        payload = {"type": "subtitle", **event_to_dict(frame)}
-        if topic is not None:
-            payload["topic"] = topic
+    async def process(self, port: str, frame: TextFrame) -> None:
+        payload = {"type": "subtitle", "port": port, **event_to_dict(frame)}
         self._history.append(payload)
         if not self._clients:
             return

@@ -275,7 +275,7 @@ def test_denoisers_preserve_frame_shape_and_format(impl):
         np.random.default_rng(0).normal(0, 0.05, FRAME_SAMPLES).astype(np.float32),
         SAMPLE_RATE, 0,
     )
-    out = denoiser.process(frame)
+    out = denoiser.process("audio", frame)
     assert out.pcm.shape == frame.pcm.shape
     assert out.pcm.dtype == np.float32
     assert out.sample_rate == frame.sample_rate
@@ -285,7 +285,7 @@ def test_denoisers_preserve_frame_shape_and_format(impl):
 def test_passthrough_is_bit_exact():
     denoiser = build("passthrough_denoiser", name="p")
     pcm = np.random.default_rng(1).normal(0, 0.1, FRAME_SAMPLES).astype(np.float32)
-    assert np.array_equal(denoiser.process(AudioFrame(pcm, SAMPLE_RATE)).pcm, pcm)
+    assert np.array_equal(denoiser.process("audio", AudioFrame(pcm, SAMPLE_RATE)).pcm, pcm)
 
 
 def test_spectral_gate_reconstructs_clean_speech_almost_unchanged():
@@ -296,7 +296,7 @@ def test_spectral_gate_reconstructs_clean_speech_almost_unchanged():
     """
     clean = load_wav(LECTURE)[: SAMPLE_RATE * 8]
     denoiser = build("spectral", name="s")
-    out = np.concatenate([denoiser.process(f).pcm for f in frames_from(clean)])
+    out = np.concatenate([denoiser.process("audio", f).pcm for f in frames_from(clean)])
     ref, aligned, lag = align(clean, out, max_lag_ms=100)
     assert lag <= 400, "delay exceeded the declared 20 ms hop"
     assert snr_db(ref, aligned - ref) > 3.0
@@ -306,7 +306,7 @@ def test_spectral_gate_reduces_added_noise():
     clean = load_wav(LECTURE)[: SAMPLE_RATE * 12]
     noisy = mix_at_snr(clean, load_wav(NOISE)[: SAMPLE_RATE * 12], 5.0)
     denoiser = build("spectral", name="s")
-    out = np.concatenate([denoiser.process(f).pcm for f in frames_from(noisy)])
+    out = np.concatenate([denoiser.process("audio", f).pcm for f in frames_from(noisy)])
 
     _, noisy_aligned, _ = align(clean, noisy, max_lag_ms=100)
     ref, cleaned, _ = align(clean, out, max_lag_ms=100)
@@ -400,7 +400,7 @@ async def test_energy_segmenter_module_wraps_the_inner_segmenter():
     node.name = "vad"
     produced: list[Utterance] = []
     for frame in frames_from(pcm):
-        produced.extend(node.process(frame))  # sync process; runner executor-wraps it
+        produced.extend(node.process("audio", frame))  # sync; runner executor-wraps it
 
     drained = node.drain()  # the graph runner calls this at end of stream
     assert isinstance(drained, list)
@@ -416,7 +416,7 @@ async def test_segmenter_module_drain_matches_inner_close():
     pcm = load_wav(LECTURE)[: SAMPLE_RATE * 4]
     node = resolve("energy")()
     for frame in frames_from(pcm):
-        node.process(frame)
+        node.process("audio", frame)
     drained = node.drain()
     assert isinstance(drained, list)
     # drain() must fully flush the inner buffer: a second close finds nothing.
@@ -462,7 +462,7 @@ async def test_rule_corrector_fixes_glossary_terms():
         text="grade ee ent dissent uses back propagation on the data set",
         lineage=Lineage(segment_id="u1"),
     )
-    out = await corrector.process(frame)
+    out = await corrector.process("text", frame)
     lowered = out.text.lower()  # the corrector also capitalises the first word
     assert "gradient descent" in lowered
     assert "backpropagation" in lowered
@@ -474,7 +474,7 @@ async def test_rule_corrector_fixes_glossary_terms():
 async def test_rule_corrector_leaves_correct_text_alone():
     corrector = build("rules", name="rules")
     out = await corrector.process(
-        TextFrame(text="This sentence is already fine.", lineage=Lineage.new("u1"))
+        "text", TextFrame(text="This sentence is already fine.", lineage=Lineage.new("u1"))
     )
     assert out.text == "This sentence is already fine."
     assert out.meta["corrected"] is False
@@ -483,7 +483,7 @@ async def test_rule_corrector_leaves_correct_text_alone():
 async def test_passthrough_corrector_only_relabels():
     corrector = build("passthrough_corrector", name="p")
     frame = TextFrame(text="unchanged", lineage=Lineage.new("u1"))
-    out = await corrector.process(frame)
+    out = await corrector.process("text", frame)
     assert out.text == "unchanged"
     assert out.lineage is frame.lineage
 
@@ -512,7 +512,7 @@ async def test_translator_in_repair_mode_returns_both_ports():
     translator = build("mock_translator", name="vi", target="vi", delay_ms=0,
                        repair_mode=True)
     produced = await translator.process(
-        TextFrame(text="hello everyone", lineage=Lineage.new("u1"))
+        "text", TextFrame(text="hello everyone", lineage=Lineage.new("u1"))
     )
     assert isinstance(produced, dict)
     assert set(produced) == {"corrected", "text_out"}
@@ -523,7 +523,7 @@ async def test_translator_in_repair_mode_returns_both_ports():
 async def test_translator_in_faithful_mode_names_its_output_port():
     translator = build("mock_translator", name="vi", target="vi", delay_ms=0)
     produced = await translator.process(
-        TextFrame(text="hello everyone", lineage=Lineage.new("u1"))
+        "text", TextFrame(text="hello everyone", lineage=Lineage.new("u1"))
     )
     assert isinstance(produced, dict)
     assert set(produced) == {"text_out"}
@@ -535,7 +535,7 @@ async def test_partials_are_not_translated():
     """Translating half a sentence produces churn on screen for no information gain."""
     translator = build("mock_translator", name="vi", target="vi", delay_ms=0)
     produced = await translator.process(
-        TextFrame(text="Hello", is_final=False, lineage=Lineage.new("u1"))
+        "text", TextFrame(text="Hello", is_final=False, lineage=Lineage.new("u1"))
     )
     assert produced is None
 
@@ -555,7 +555,7 @@ async def test_mock_transcriber_turns_an_utterance_into_frames():
     utterance = next(
         u for f in frames_from(pcm) for u in segmenter.push(f) if u.is_final
     )
-    frames = await transcriber.process(utterance)
+    frames = await transcriber.process("utterance", utterance)
 
     assert len(frames) == 1
     frame = frames[0]
@@ -587,13 +587,13 @@ async def test_jsonl_sink_records_every_revision(tmp_path):
     await sink.start()
     base = TextFrame(text="the sell", lineage=Lineage(segment_id="u1",
                                                       t_audio_end=1.0))
-    await sink.process(base)
+    await sink.process("raw", base)
     await sink.process(
-        TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
+        "corrected", TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
                                                    t_audio_end=1.0))
     )
     await sink.process(
-        TextFrame(text="tế bào", lang="vi",
+        "translated", TextFrame(text="tế bào", lang="vi",
                   lineage=Lineage(segment_id="u1", revision=2, t_audio_end=1.0))
     )
     await sink.stop()
@@ -616,14 +616,14 @@ async def test_pretty_sink_replaces_a_line_rather_than_appending():
     sink = build("stdout_pretty", name="screen",
                  stream=io.StringIO(), colour=False)
     base = Lineage(segment_id="u1", t_audio_end=1.0)
-    await sink.process(TextFrame(text="the sell", lineage=base))
+    await sink.process("raw", TextFrame(text="the sell", lineage=base))
     await sink.process(
-        TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
+        "corrected", TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
                                                    t_audio_end=1.0),
                   meta={"corrected": True})
     )
     await sink.process(
-        TextFrame(text="tế bào", lang="vi",
+        "translated", TextFrame(text="tế bào", lang="vi",
                   lineage=Lineage(segment_id="u1", revision=2, t_audio_end=1.0))
     )
 
@@ -642,11 +642,11 @@ async def test_pretty_sink_ignores_a_stale_revision():
     sink = build("stdout_pretty", name="screen",
                  stream=io.StringIO(), colour=False)
     await sink.process(
-        TextFrame(text="corrected text",
+        "corrected", TextFrame(text="corrected text",
                   lineage=Lineage(segment_id="u1", revision=1))
     )
     await sink.process(
-        TextFrame(text="raw text", lineage=Lineage(segment_id="u1", revision=0))
+        "raw", TextFrame(text="raw text", lineage=Lineage(segment_id="u1", revision=0))
     )  # the older revision arrives late
     assert sink._blocks[0].english == "corrected text"
     await sink.stop()
@@ -655,13 +655,13 @@ async def test_pretty_sink_ignores_a_stale_revision():
 async def test_collect_sink_keys_latest_by_segment_and_language():
     sink = build("collect", name="c")
     base = Lineage(segment_id="u1", t_audio_end=1.0)
-    await sink.process(TextFrame(text="the sell", lineage=base))
+    await sink.process("raw", TextFrame(text="the sell", lineage=base))
     await sink.process(
-        TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
+        "corrected", TextFrame(text="the cell", lineage=Lineage(segment_id="u1", revision=1,
                                                    t_audio_end=1.0))
     )
     await sink.process(
-        TextFrame(text="tế bào", lang="vi",
+        "translated", TextFrame(text="tế bào", lang="vi",
                   lineage=Lineage(segment_id="u1", revision=2, t_audio_end=1.0))
     )
     assert sink.text("en") == "the cell"

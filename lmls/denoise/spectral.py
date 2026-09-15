@@ -117,7 +117,7 @@ class SpectralDenoiser(Module):
         self._prev_gain = gain
         return gain
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, port: str, frame: AudioFrame) -> AudioFrame:
         self._in_buf = np.concatenate([self._in_buf, frame.pcm])
         produced = np.zeros(0, dtype=np.float32)
 

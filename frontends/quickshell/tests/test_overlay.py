@@ -46,7 +46,7 @@ async def test_live_overlay_receives_subtitles_and_exposes_ipc_controls(tmp_path
                     log.seek(0)
                     pytest.fail("Overlay did not connect:\n" + log.read())
                 await connections[0].send(json.dumps({
-                    "type": "subtitle", "topic": "text.corrected", "segment_id": "smoke",
+                    "type": "subtitle", "port": "corrected", "segment_id": "smoke",
                     "revision": 0, "lang": "en", "text": "Window smoke test",
                 }))
                 async with asyncio.timeout(5):

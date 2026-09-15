@@ -93,7 +93,7 @@ def run(
                     yield utterance
 
             async for utterance in utterances():
-                for frame in await transcriber.process(utterance):
+                for frame in await transcriber.process("utterance", utterance):
                     _write(frame, text_only)
 
         asyncio.run(pump())

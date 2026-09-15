@@ -109,7 +109,7 @@ class OllamaLlmTranslator(Module):
         )
         return str(data["translation"]).strip() if data else ""
 
-    async def process(self, frame: TextFrame) -> TextFrame | None:
+    async def process(self, port: str, frame: TextFrame) -> TextFrame | None:
         if not frame.is_final and not self.translate_partials:
             return None
 

@@ -21,7 +21,7 @@ class PassthroughCorrector(Module):
     def __init__(self, **_: Any):
         super().__init__()
 
-    async def process(self, frame: TextFrame) -> TextFrame:
+    async def process(self, port: str, frame: TextFrame) -> TextFrame:
         # Same lineage (the bus stamps the revision); only the bookkeeping meta changes.
         return replace(frame, meta={**frame.meta, "corrected": False})
 

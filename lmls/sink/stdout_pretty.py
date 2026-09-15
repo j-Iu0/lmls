@@ -139,7 +139,7 @@ class PrettyStdoutSink(Module):
 
     # -- sink interface -------------------------------------------------------
 
-    async def process(self, frame: TextFrame) -> None:
+    async def process(self, port: str, frame: TextFrame) -> None:
         block = self._index.get(frame.segment_id)
         if block is None:
             block = Block(segment_id=frame.segment_id)

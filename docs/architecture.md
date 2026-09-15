@@ -86,9 +86,10 @@ That single decision is what makes the correction stage genuinely optional: a tr
 wired to `text.raw` instead of `text.corrected` is a valid graph, with no code change and
 no conditional anywhere.
 
-Which stage produced a frame is visible from the **topic it was published to**, not from a
-field inside the frame. Topic names are set in config; the pipeline has no opinion on what
-the text means — only modules do.
+Which input stream a frame arrived on is visible from the **input port name** the
+graph passes to `process` (and the `port` field on WebSocket sink events), not from a
+field inside the frame. Topic names are set in config; the pipeline has no opinion on
+what the text means — only modules do.
 
 `segment_id` + `revision` is the incremental-display mechanism. A sink replaces the line
 whose `segment_id` matches when a higher `revision` arrives and leaves every other line

@@ -79,7 +79,7 @@ class MockTranslator(Module):
         return f"[{target}] {body}"
 
     async def process(
-        self, frame: TextFrame
+        self, port: str, frame: TextFrame
     ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None

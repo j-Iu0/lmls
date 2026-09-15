@@ -81,7 +81,7 @@ class HighpassGateDenoiser(Module):
         self._hold_left = 0.0
         self._gain = self.floor_gain
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, port: str, frame: AudioFrame) -> AudioFrame:
         filtered, self._zi = sosfilt(self._sos, frame.pcm, zi=self._zi)
         filtered = filtered.astype(np.float32)
 

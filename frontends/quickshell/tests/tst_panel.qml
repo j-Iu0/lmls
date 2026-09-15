@@ -75,7 +75,7 @@ TestCase {
     function test_delay_labels_follow_their_lines() {
         panel.history = [
             {segmentId: "one", source: "First", translation: "Một",
-                sourceDelay: 1234, translationDelay: 2500},
+                translationLang: "vi", sourceDelay: 1234, translationDelay: 2500},
             {segmentId: "two", source: "Second", translation: "Hai"},
         ];
         var view = historyList();
@@ -85,9 +85,12 @@ TestCase {
         compare(findChild(withDelay, "historyTranslationDelay").text, "2.5 s");
         verify(findChild(withDelay, "historySourceDelay").visible);
         verify(findChild(withDelay, "historyTranslationDelay").visible);
+        compare(findChild(withDelay, "historyTranslationLang").text, "vi");
+        verify(findChild(withDelay, "historyTranslationLang").visible);
         var noDelay = view.itemAtIndex(1);
         verify(!findChild(noDelay, "historySourceDelay").visible);
         verify(!findChild(noDelay, "historyTranslationDelay").visible);
+        verify(!findChild(noDelay, "historyTranslationLang").visible);
         // Hiding a line hides its delay with it.
         mouseClick(findChild(panel, "sourceToggle"));
         verify(!findChild(withDelay = view.itemAtIndex(0), "historySourceDelay").visible);

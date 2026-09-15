@@ -131,7 +131,7 @@ class MlxLlmTranslator(Module):
         return None, str(data["translation"]).strip()
 
     async def process(
-        self, frame: TextFrame
+        self, port: str, frame: TextFrame
     ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None

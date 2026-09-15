@@ -239,7 +239,7 @@ class DeepgramTranscriber(Module):
                     await listener
 
     async def process_stream(
-        self, frames: AsyncIterator[AudioFrame]
+        self, input_stream: AsyncIterator[tuple[str, AudioFrame]]
     ) -> AsyncIterator[TextFrame]:
         if self._client is None:
             await self.start()
@@ -247,7 +247,7 @@ class DeepgramTranscriber(Module):
         events: asyncio.Queue[Any] = asyncio.Queue()
         async with self._open_connection(events) as connection:
             sender = asyncio.create_task(
-                self._send_audio(connection, frames, events),
+                self._send_audio(connection, input_stream, events),
                 name=f"{self.name}:deepgram-send",
             )
             keepalive = asyncio.create_task(
@@ -303,11 +303,11 @@ class DeepgramTranscriber(Module):
     async def _send_audio(
         self,
         connection: Any,
-        frames: AsyncIterator[AudioFrame],
+        frames: AsyncIterator[tuple[str, AudioFrame]],
         events: asyncio.Queue[Any],
     ) -> None:
         try:
-            async for frame in frames:
+            async for _, frame in frames:
                 if frame.sample_rate != SAMPLE_RATE:
                     raise ValueError(
                         f"Deepgram expects canonical {SAMPLE_RATE} Hz audio, got "

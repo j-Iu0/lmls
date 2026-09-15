@@ -12,7 +12,7 @@ from lmls.core.graph import Graph
 
 
 @pytest.mark.asyncio
-async def test_graph_websocket_preserves_topic_for_live_events_and_replay(unused_tcp_port):
+async def test_graph_websocket_preserves_port_for_live_events_and_replay(unused_tcp_port):
     config = load_config("config/mock.toml")
     config.node("src").options["realtime"] = False
     config.settings["audio_backpressure"] = "block"
@@ -34,11 +34,11 @@ async def test_graph_websocket_preserves_topic_for_live_events_and_replay(unused
             task = asyncio.create_task(graph.run())
             messages = []
             async with asyncio.timeout(5):
-                while not any(message.get("topic") == "text.out" for message in messages):
+                while not any(message.get("port") == "translated" for message in messages):
                     messages.append(json.loads(await client.recv()))
-                    assert "topic" in messages[-1]
-            assert {message["topic"] for message in messages} == {
-                "text.raw", "text.corrected", "text.out",
+                    assert "port" in messages[-1]
+            assert {message["port"] for message in messages} == {
+                "raw", "corrected", "translated",
             }
             assert all(message["type"] == "subtitle" for message in messages)
             async with connect(f"ws://127.0.0.1:{unused_tcp_port}") as late_client:

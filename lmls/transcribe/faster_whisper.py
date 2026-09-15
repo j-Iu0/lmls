@@ -113,7 +113,7 @@ class FasterWhisperTranscriber(Module):
         text = " ".join(s.text for s in segments).strip()
         return "" if looks_hallucinated(text) else text
 
-    async def process(self, utterance: Utterance) -> list[TextFrame]:
+    async def process(self, port: str, utterance: Utterance) -> list[TextFrame]:
         text = await asyncio.get_running_loop().run_in_executor(
             None, self._decode, utterance.pcm, utterance.is_final
         )

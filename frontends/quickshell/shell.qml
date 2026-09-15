@@ -12,9 +12,8 @@ ShellRoot {
         url: settings.websocketUrl
         options: ({
             sourceLanguage: settings.sourceLanguage,
-            targetLanguage: settings.targetLanguage,
-            sourceTopics: settings.sourceTopics,
-            translationTopics: settings.translationTopics,
+            sourcePorts: settings.sourcePorts,
+            translationPorts: settings.translationPorts,
             timeoutMs: settings.timeoutMs,
             historyLimit: settings.historyLimit
         })
@@ -47,6 +46,7 @@ ShellRoot {
                 monitor: window.screen ? window.screen.name : "",
                 source: stream.sourceText,
                 translation: stream.translationText,
+                translationLang: stream.translationLang,
                 error: stream.lastError,
                 rejectedMessages: stream.rejectedMessages
             });

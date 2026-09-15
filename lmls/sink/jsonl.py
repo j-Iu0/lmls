@@ -59,7 +59,7 @@ class JsonlSink(Module):
         else:
             self._file = sys.stdout
 
-    async def process(self, frame: TextFrame) -> None:
+    async def process(self, port: str, frame: TextFrame) -> None:
         if self._file is None:
             await self.start()
         assert self._file is not None

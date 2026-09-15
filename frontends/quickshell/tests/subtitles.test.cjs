@@ -7,20 +7,37 @@ const path = require('node:path');
 // Run the same plain JavaScript imported by QML, without a second implementation.
 const api = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../Subtitles.js'), 'utf8'), api);
-const options = {sourceLanguage: 'en', targetLanguage: 'vi',
-    sourceTopics: ['text.corrected', 'text.raw'], translationTopics: [],
+const options = {sourceLanguage: 'en',
+    sourcePorts: ['corrected', 'raw'], translationPorts: ['translated'],
     timeoutMs: 8000, historyLimit: 20};
 const event = (overrides = {}) => ({type: 'subtitle', segment_id: 'u1',
-    topic: 'text.raw', lang: 'en', revision: 0, text: 'raw English',
+    port: 'raw', lang: 'en', revision: 0, text: 'raw English',
     t_audio_end: 1, t_emit: 1, ...overrides});
 
-test('an unselected language cannot hide or prolong the current subtitle', () => {
+test('a translation in any language becomes the current segment and reports its language', () => {
     const store = api.createStore(options);
     store.receive(event(), 1000);
-    store.receive(event({segment_id: 'u2', lang: 'zh', topic: 'text.zh',
+    store.receive(event({segment_id: 'u2', lang: 'zh', port: 'translated',
         t_audio_end: 2, t_emit: 8, text: '中文'}), 8000);
-    assert.equal(store.view(8000).source, 'raw English');
-    assert.equal(store.view(9000).source, '');
+    const view = store.view(8000);
+    assert.equal(view.segmentId, 'u2');
+    assert.equal(view.source, '');
+    assert.equal(view.translation, '中文');
+    assert.equal(view.translationLang, 'zh');
+    // Its own freshness, not the source's, governs expiry.
+    assert.equal(store.view(9000).translation, '中文');
+    assert.equal(store.view(17000).translation, '');
+});
+
+test('events on the raw port never surface as translations', () => {
+    const store = api.createStore(options);
+    store.receive(event(), 1000);
+    const view = store.view(1000);
+    assert.equal(view.source, 'raw English');
+    assert.equal(view.translation, '');
+    assert.equal(view.translationLang, '');
+    assert.equal(store.history()[0].translation, '');
+    assert.equal(store.history()[0].translationLang, '');
 });
 
 test('history stays bounded and reset accepts restarted segment IDs', () => {
@@ -37,10 +54,10 @@ test('history stays bounded and reset accepts restarted segment IDs', () => {
     assert.equal(store.view(12000).source, 'New session');
 });
 
-test('invalid messages and missing topic metadata cannot corrupt displayed captions', () => {
+test('invalid messages and missing port metadata cannot corrupt displayed captions', () => {
     const store = api.createStore(options);
     store.receive(event(), 1000);
-    for (const invalid of [null, [], {}, event({type: 'status'}), event({topic: undefined}),
+    for (const invalid of [null, [], {}, event({type: 'status'}), event({port: undefined}),
         event({revision: -1}), event({text: 42}), event({t_emit: 'bad'}),
         event({lang: ''}), event({segment_id: ''})]) {
         assert.equal(store.receive(invalid, 1100), false);
@@ -72,33 +89,54 @@ test('late events cannot replace the newest utterance, even when first seen late
 
 test('corrected source wins over a later raw revision; translation stays paired', () => {
     const store = api.createStore(options);
-    store.receive(event({topic: 'text.corrected', text: 'Correct English'}), 1000);
+    store.receive(event({port: 'corrected', text: 'Correct English'}), 1000);
     store.receive(event({revision: 10}), 1100);
-    store.receive(event({topic: 'text.out', lang: 'vi', text: 'Tiếng Việt'}), 1200);
+    store.receive(event({port: 'translated', lang: 'vi', text: 'Tiếng Việt'}), 1200);
     const view = store.view(1200);
     assert.equal(view.source, 'Correct English');
     assert.equal(view.translation, 'Tiếng Việt');
+    assert.equal(view.translationLang, 'vi');
+});
+
+test('the translated port accepts any language and reports which one arrived', () => {
+    const store = api.createStore(options);
+    store.receive(event(), 1000);
+    store.receive(event({port: 'translated', lang: 'zh', text: '中文'}), 1100);
+    const view = store.view(1100);
+    assert.equal(view.translation, '中文');
+    assert.equal(view.translationLang, 'zh');
+    assert.equal(store.history()[0].translationLang, 'zh');
+});
+
+test('a translation in the source language still shows, with its language', () => {
+    const store = api.createStore(options);
+    store.receive(event(), 1000);
+    store.receive(event({segment_id: 'u2', lang: 'en', port: 'translated',
+        t_audio_end: 2, t_emit: 8, text: 'plain English'}), 8000);
+    const view = store.view(8000);
+    assert.equal(view.translation, 'plain English');
+    assert.equal(view.translationLang, 'en');
 });
 
 test('revisions are checked independently for each topic and language', () => {
     const store = api.createStore(options);
     store.receive(event({revision: 3, text: 'Newest source'}), 1000);
     store.receive(event({revision: 2, text: 'Stale source'}), 1100);
-    store.receive(event({topic: 'text.out', lang: 'vi', revision: 4, text: 'Mới'}), 1200);
-    store.receive(event({topic: 'text.out', lang: 'vi', revision: 3, text: 'Cũ'}), 1300);
-    store.receive(event({topic: 'text.out', lang: 'zh', revision: 20, text: '中文'}), 1400);
+    store.receive(event({port: 'translated', lang: 'vi', revision: 4, text: 'Mới'}), 1200);
+    store.receive(event({port: 'translated', lang: 'vi', revision: 3, text: 'Cũ'}), 1300);
+    store.receive(event({port: 'translated', lang: 'zh', revision: 20, text: '中文'}), 1400);
     assert.equal(store.view(1400).source, 'Newest source');
     assert.equal(store.view(1400).translation, 'Mới');
-    store.receive(event({topic: 'text.out', lang: 'vi', revision: 4, text: 'Cập nhật'}), 1500);
+    store.receive(event({port: 'translated', lang: 'vi', revision: 4, text: 'Cập nhật'}), 1500);
     assert.equal(store.view(1500).translation, 'Cập nhật');
 });
 
 
 test('history exposes the delay of the event whose text is displayed', () => {
     const store = api.createStore(options);
-    store.receive(event({topic: 'text.raw', end_to_end_ms: 500}), 1000);
-    store.receive(event({topic: 'text.corrected', end_to_end_ms: 1200, text: 'Correct'}), 1100);
-    store.receive(event({topic: 'text.out', lang: 'vi', end_to_end_ms: 2500, text: 'Việt'}), 1200);
+    store.receive(event({end_to_end_ms: 500}), 1000);
+    store.receive(event({port: 'corrected', end_to_end_ms: 1200, text: 'Correct'}), 1100);
+    store.receive(event({port: 'translated', lang: 'vi', end_to_end_ms: 2500, text: 'Việt'}), 1200);
     const rows = store.history();
     assert.equal(rows[0].sourceDelay, 1200);
     assert.equal(rows[0].translationDelay, 2500);
@@ -120,7 +158,7 @@ test('history retains expired captions in speech order and receives late correct
     store.receive(event({segment_id: 'u2', t_audio_end: 2, text: 'Second'}), 2000);
     store.receive(event({text: 'First'}), 2100);
     assert.deepEqual(JSON.parse(JSON.stringify(store.history())).map(row => row.source), ['First', 'Second']);
-    store.receive(event({topic: 'text.corrected', text: 'First corrected'}), 2200);
+    store.receive(event({port: 'corrected', text: 'First corrected'}), 2200);
     assert.equal(store.history()[0].source, 'First corrected');
     assert.equal(store.view(20000).source, '');
     assert.equal(store.history().length, 2);

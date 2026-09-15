@@ -22,7 +22,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, AsyncIterator, Callable, Sequence
 
 from .bus import Bus, SubscriptionMode
 from .config import GraphConfig, NodeConfig
@@ -43,7 +43,8 @@ class GraphError(ValueError):
 class BuiltNode:
     config: NodeConfig
     stage: Module
-    subscriptions: list[Any] = dataclasses.field(default_factory=list)
+    #: (input port name, subscription) for every wired input.
+    subscriptions: list[tuple[str, Any]] = dataclasses.field(default_factory=list)
 
 
 def validate(cfg: GraphConfig) -> list[str]:
@@ -79,11 +80,6 @@ def validate(cfg: GraphConfig) -> list[str]:
             raise GraphError(
                 f"node {n.name!r} ({cls.__name__}) declares output ports "
                 f"{sorted(cls.outputs)} but wires none"
-            )
-        if callable(getattr(cls, "process_stream", None)) and len(n.inputs) != 1:
-            raise GraphError(
-                f"node {n.name!r} ({cls.__name__}) is a streaming transform and "
-                "must wire exactly one input topic"
             )
 
     # A graph needs at least one node that produces without consuming.
@@ -311,7 +307,7 @@ class Graph:
                 mode=mode,
                 skip_if_finalized=nc.skip_if_finalized,
             )
-            node.subscriptions.append(sub)
+            node.subscriptions.append((port_name, sub))
 
         for topic in nc.out_topics:
             self.bus.register_publisher(topic)
@@ -486,14 +482,59 @@ class Graph:
 
         # Multi-input modules run one pump per declared input subscription concurrently.
         pumps = [
-            asyncio.create_task(self._pump(node, sub, is_async))
-            for sub in node.subscriptions
+            asyncio.create_task(self._pump(node, port, sub, is_async))
+            for port, sub in node.subscriptions
         ]
         await self._join_pumps(pumps)
 
         # Input stream exhausted: publish whatever the module still buffers.
         for leftover in stage.drain():
             await self._publish_result(node, leftover, None, 0.0)
+
+    def _merge_inputs(self, node: BuiltNode) -> AsyncIterator[tuple[str, Any]]:
+        """One async iterator of ``(port, payload)`` pairs across all wired inputs.
+
+        Streaming transforms own their input loop; without this merge they could
+        only ever listen to a single topic. Each subscription is drained by its own
+        task into a shared queue, so a slow consumer of one port never hides traffic
+        on another.
+        """
+        queue: asyncio.Queue = asyncio.Queue()
+        pumps: list[asyncio.Task] = []
+        open_pumps = len(node.subscriptions)
+        failure: BaseException | None = None
+
+        async def pump(port: str, sub: Any) -> None:
+            nonlocal open_pumps, failure
+            try:
+                async for payload in sub:
+                    queue.put_nowait((port, payload))
+            except BaseException as exc:  # propagate into the consumer
+                failure = exc
+            finally:
+                open_pumps -= 1
+                if open_pumps == 0:
+                    queue.put_nowait(None)
+
+        for port, sub in node.subscriptions:
+            pumps.append(asyncio.create_task(pump(port, sub), name=f"{node.config.name}:{port}"))
+
+        async def iterate() -> AsyncIterator[tuple[str, Any]]:
+            try:
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        if failure is not None:
+                            raise failure
+                        return
+                    yield item
+            finally:
+                for pump_task in pumps:
+                    if not pump_task.done() and not pump_task.cancelling():
+                        pump_task.cancel()
+                await asyncio.gather(*pumps, return_exceptions=True)
+
+        return iterate()
 
     async def _run_stream_transform(self, node: BuiltNode) -> None:
         """Run a full-duplex transform whose outputs are not input-call responses.
@@ -505,7 +546,7 @@ class Graph:
         and yield outputs whenever the remote or local stream produces them.
         """
         stage = node.stage
-        stream = stage.process_stream(node.subscriptions[0])
+        stream = stage.process_stream(self._merge_inputs(node))
         if not hasattr(stream, "__aiter__"):
             raise GraphError(
                 f"{node.config.name}: process_stream must return an async iterator"
@@ -526,27 +567,24 @@ class Graph:
                 self.metrics.record_stage(node.config.name, elapsed * 1000)
                 self._emit({"kind": "processing", "node": node.config.name,
                             "elapsed_ms": elapsed * 1000})
-                await self._publish_result(node, result, None, elapsed)
+                await self._publish_stream_yield(node, result, elapsed)
 
         # A streaming transform is responsible for provider-side finalisation before
         # its iterator ends.  ``drain`` remains available for ordinary transforms.
 
     @staticmethod
     def _first_text_frame(result: Any) -> TextFrame | None:
+        if isinstance(result, tuple):
+            return Graph._first_text_frame(result[1])
         if isinstance(result, TextFrame):
             return result
-        if isinstance(result, dict):
-            return next(
-                (value for value in result.values() if isinstance(value, TextFrame)),
-                None,
-            )
         if isinstance(result, list):
             return next((value for value in result if isinstance(value, TextFrame)), None)
         return None
 
-    async def _pump(self, node: BuiltNode, sub, is_async: bool) -> None:
+    async def _pump(self, node: BuiltNode, port: str, sub, is_async: bool) -> None:
         async for payload in sub:
-            result, elapsed = await self._process(node, payload, is_async)
+            result, elapsed = await self._process(node, port, payload, is_async)
             await self._publish_result(node, result, payload, elapsed)
 
     async def _join_pumps(self, pumps: list[asyncio.Task]) -> None:
@@ -560,39 +598,27 @@ class Graph:
             await asyncio.gather(*pumps, return_exceptions=True)
 
     async def _process(
-        self, node: BuiltNode, payload: Any, is_async: bool, topic: str | None = None
+        self, node: BuiltNode, port: str, payload: Any, is_async: bool
     ) -> tuple[Any, float]:
         elapsed = 0.0
         invoked = False
-        process_with_topic = (
-            getattr(node.stage, "process_with_topic", None) if topic is not None else None
-        )
 
         def process_sync():
             nonlocal elapsed, invoked
             invoked = True
             t0 = time.perf_counter()
             try:
-                if process_with_topic:
-                    return process_with_topic(payload, topic)
-                return node.stage.process(payload)
+                return node.stage.process(port, payload)
             finally:
                 elapsed = time.perf_counter() - t0
 
         self._in_flight[node.config.name] += 1
         try:
-            if process_with_topic:
+            if is_async:
                 invoked = True
                 t0 = time.perf_counter()
                 try:
-                    result = await process_with_topic(payload, topic)
-                finally:
-                    elapsed = time.perf_counter() - t0
-            elif is_async:
-                invoked = True
-                t0 = time.perf_counter()
-                try:
-                    result = await node.stage.process(payload)
+                    result = await node.stage.process(port, payload)
                 finally:
                     elapsed = time.perf_counter() - t0
             else:
@@ -629,88 +655,146 @@ class Graph:
     async def _publish_result(
         self, node: BuiltNode, result: Any, source_payload: Any, elapsed_s: float
     ) -> None:
-        """Dispatch the module's return value to the correct output topic(s).
+        """Dispatch the return value of ``process`` to the correct output topic(s).
 
-        Also records stage latency into the Lineage if the result contains a TextFrame.
-        The bus stamps the revision when the frame is published.
+        Convention: a ``dict`` keyed by declared output port name. A bare payload or
+        a list of payloads is accepted only when the module declares exactly one
+        output port. Also records stage latency into the Lineage of any TextFrame;
+        the bus stamps the revision when the frame is published.
         """
         if result is None:
             return
 
-        items: list[tuple[str | None, Any]] = []  # (port_name_or_None, payload)
+        if isinstance(result, tuple):
+            raise GraphError(
+                f"{node.config.name}: process must return a dict keyed by declared "
+                f"output port (a bare payload or list is allowed only for a single "
+                f"output port); declared: {sorted(node.stage.outputs)}"
+            )
 
         if isinstance(result, dict):
-            items = [(port, payload) for port, payload in result.items()]
-        elif isinstance(result, list):
-            items = [(None, item) for item in result]
-        else:
-            items = [(None, result)]
-
-        for port_name, payload in items:
-            if isinstance(payload, Utterance) and (
-                not isinstance(source_payload, Utterance) or payload.id != source_payload.id
-            ):
-                payload = self._namespace_origin(node, payload)
-            # Inject stage latency into Lineage for TextFrames
-            if isinstance(payload, TextFrame):
-                payload = dataclasses.replace(
-                    payload,
-                    lineage=payload.lineage.record_latency(
-                        node.config.name, elapsed_s
-                    ),
-                )
-
-            # Resolve output topic
-            if port_name is not None:
+            for port_name, payload in result.items():
                 if port_name not in node.stage.outputs:
                     raise GraphError(
                         f"{node.config.name}: process returned undeclared output port "
                         f"{port_name!r}; declared: {sorted(node.stage.outputs)}"
                     )
-                topic = node.config.topic_for_port(port_name)
-            else:
-                if len(node.stage.outputs) == 1:
-                    only_port = next(iter(node.stage.outputs))
-                    topic = node.config.topic_for_port(only_port)
-                elif not node.stage.outputs:
-                    # Every output port was skipped or never wired: like a named
-                    # result for an unwired port, the frame is simply dropped.
-                    if node.config.name not in self._no_output_warned:
-                        self._no_output_warned.add(node.config.name)
-                        log.warning(
-                            "node %r: no output topic is wired; its results are discarded",
-                            node.config.name,
-                        )
-                    continue
-                else:
-                    raise GraphError(
-                        f"{node.config.name}: process must return a mapping keyed by "
-                        f"declared output port; declared: {sorted(node.stage.outputs)}"
-                    )
+                await self._publish_port(node, port_name, payload, source_payload, elapsed_s)
+            return
 
-            if topic is None:
-                log.debug(
-                    "node %r: no topic for port %r; dropping",
-                    node.config.name,
-                    port_name,
+        # Bare payload or list of payloads: single-output modules only.
+        await self._publish_implicit_ports(node, result, source_payload, elapsed_s,
+                                           caller="process")
+
+    async def _publish_stream_yield(
+        self, node: BuiltNode, result: Any, elapsed_s: float
+    ) -> None:
+        """Dispatch one yield from ``process_stream``.
+
+        Convention: a ``(port, payload)`` tuple. A bare payload or a list of
+        payloads is accepted only when the module declares exactly one output port.
+        """
+        if result is None:
+            return
+
+        if isinstance(result, tuple):
+            if len(result) != 2 or not isinstance(result[0], str):
+                raise GraphError(
+                    f"{node.config.name}: process_stream must yield "
+                    f"(port_name, payload) tuples; declared output ports: "
+                    f"{sorted(node.stage.outputs)}"
                 )
-                continue
+            port_name, payload = result
+            if port_name not in node.stage.outputs:
+                raise GraphError(
+                    f"{node.config.name}: process_stream yielded undeclared output "
+                    f"port {port_name!r}; declared: {sorted(node.stage.outputs)}"
+                )
+            await self._publish_port(node, port_name, payload, None, elapsed_s)
+            return
 
-            await self._publish(node, topic, payload)
+        if isinstance(result, dict):
+            raise GraphError(
+                f"{node.config.name}: process_stream must yield (port_name, payload) "
+                f"tuples, not a dict; declared output ports: "
+                f"{sorted(node.stage.outputs)}"
+            )
+
+        # Bare payload or list of payloads: single-output modules only.
+        await self._publish_implicit_ports(node, result, None, elapsed_s,
+                                           caller="process_stream")
+
+    async def _publish_implicit_ports(
+        self, node: BuiltNode, result: Any, source_payload: Any,
+        elapsed_s: float, caller: str,
+    ) -> None:
+        """Publish a bare payload or list to the module's single output port."""
+        outputs = node.stage.outputs
+        if len(outputs) == 1:
+            only_port = next(iter(outputs))
+            items = result if isinstance(result, list) else [result]
+            for payload in items:
+                await self._publish_port(node, only_port, payload, source_payload, elapsed_s)
+            return
+        if not outputs:
+            # Every output port was skipped or never wired: like a named
+            # result for an unwired port, the frame is simply dropped.
+            if node.config.name not in self._no_output_warned:
+                self._no_output_warned.add(node.config.name)
+                log.warning(
+                    "node %r: no output topic is wired; its results are discarded",
+                    node.config.name,
+                )
+            return
+        raise GraphError(
+            f"{node.config.name}: {caller} must return a "
+            + ("dict keyed by" if caller == "process" else "sequence of (port_name, payload) tuples for")
+            + " declared output ports (a bare payload or list is allowed only for a "
+            + f"single output port); declared: {sorted(outputs)}"
+        )
+
+    async def _publish_port(
+        self, node: BuiltNode, port_name: str, payload: Any,
+        source_payload: Any, elapsed_s: float,
+    ) -> None:
+        """Namespace, latency-stamp and publish one payload to one output port."""
+        if isinstance(payload, Utterance) and (
+            not isinstance(source_payload, Utterance) or payload.id != source_payload.id
+        ):
+            payload = self._namespace_origin(node, payload)
+        # Inject stage latency into Lineage for TextFrames
+        if isinstance(payload, TextFrame):
+            payload = dataclasses.replace(
+                payload,
+                lineage=payload.lineage.record_latency(
+                    node.config.name, elapsed_s
+                ),
+            )
+
+        topic = node.config.topic_for_port(port_name)
+        if topic is None:
+            log.debug(
+                "node %r: no topic for port %r; dropping",
+                node.config.name,
+                port_name,
+            )
+            return
+
+        await self._publish(node, topic, payload)
 
     async def _run_sink(self, node: BuiltNode) -> None:
         stage = node.stage
-        process_with_topic = getattr(stage, "process_with_topic", None)
-        is_async = inspect.iscoroutinefunction(process_with_topic or stage.process)
+        is_async = inspect.iscoroutinefunction(stage.process)
         lock = asyncio.Lock()  # serialise writes; sinks render shared state
 
-        async def pump(sub) -> None:
+        async def pump(port: str, sub) -> None:
             async for payload in sub:
                 async with lock:
-                    await self._process(node, payload, is_async, topic=sub.topic)
+                    await self._process(node, port, payload, is_async)
 
         await self._join_pumps([
-            asyncio.create_task(pump(sub)) for sub in node.subscriptions
+            asyncio.create_task(pump(port, sub))
+            for port, sub in node.subscriptions
         ])
 
 

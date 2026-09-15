@@ -45,7 +45,7 @@ class StreamingTransformProbe(Module):
     async def process_stream(self, frames):
         last = None
         count = 0
-        async for last in frames:
+        async for _, last in frames:
             count += 1
         assert last is not None
         await asyncio.sleep(0)
@@ -53,6 +53,33 @@ class StreamingTransformProbe(Module):
             f"received {count} frames",
             lineage=Lineage(segment_id="stream-1", t_audio_end=last.t_capture),
         )
+
+
+class MultiOutStreamProbe(Module):
+    """Yields (port, payload) tuples, the multi-output streaming convention."""
+
+    inputs = {"audio": AudioFrame}
+    outputs = {"text": TextFrame, "side": TextFrame}
+
+    def __init__(self, bad=None):
+        super().__init__()
+        self.bad = bad  # None | "dict" | "bare" | "undeclared"
+
+    async def process_stream(self, frames):
+        count = 0
+        async for _, _frame in frames:
+            count += 1
+        if self.bad == "dict":
+            yield {"text": TextFrame("dicted", lineage=Lineage.new("s1"))}
+            return
+        if self.bad == "bare":
+            yield TextFrame("bare", lineage=Lineage.new("s1"))
+            return
+        if self.bad == "undeclared":
+            yield "implicit", TextFrame("nope", lineage=Lineage.new("s1"))
+            return
+        yield "text", TextFrame(f"main {count}", lineage=Lineage(segment_id="s1"))
+        yield ("side", TextFrame("side", lineage=Lineage(segment_id="s1")))
 
 
 def full_pipeline(**overrides) -> list[dict]:
@@ -156,7 +183,7 @@ async def test_multi_output_module_cannot_return_a_bare_payload():
     graph = Graph(cfg_from(full_pipeline()))
     translator = next(n for n in graph.nodes if n.config.name == "vi")
     frame = TextFrame("hello", lineage=Lineage.new("segment"))
-    with pytest.raises(GraphError, match="must return a mapping"):
+    with pytest.raises(GraphError, match="must return a dict keyed by declared"):
         await graph._publish_result(translator, frame, frame, 0.0)
 
 
@@ -168,9 +195,22 @@ async def test_module_cannot_return_an_undeclared_output_port():
         await graph._publish_result(translator, {"implicit": frame}, frame, 0.0)
 
 
-def test_cycles_are_rejected():
-    """Every topic has a publisher and a subscriber, so only the cycle check catches it:
-    the translator feeds its output back into the topic the corrector reads."""
+class CycleProbe(Module):
+    """Two-input passthrough so a graph can close a loop with one publisher per topic."""
+
+    inputs = {"in": TextFrame, "feedback": TextFrame}
+    outputs = {"out": TextFrame}
+
+    async def process(self, port, frame):
+        return frame
+
+
+async def test_cycles_are_rejected(monkeypatch):
+    """Every topic has exactly one publisher, so the loop closes through a node that
+    also consumes its own output: the cycle check is what catches that."""
+    from lmls.core.registry import REGISTRY
+
+    monkeypatch.setitem(REGISTRY, "cycle_probe", f"{__name__}:CycleProbe")
     nodes = [
         {"name": "src", "impl": "wav", "out": "audio.raw", "path": WAV},
         {"name": "vad", "impl": "energy", "in": "audio.raw", "out": "utterance.speech"},
@@ -178,8 +218,11 @@ def test_cycles_are_rejected():
          "in": "utterance.speech", "out": "text.raw"},
         {"name": "fix", "impl": "rules", "in": "text.raw", "out": "text.corrected"},
         {"name": "vi", "impl": "mock_translator",
-         "in": "text.corrected", "out": {"text_out": "text.raw"},  # <- back into fix
+         "in": "text.corrected", "out": {"text_out": "text.vi"},
          "target": "vi", "delay_ms": 0},
+        {"name": "loop", "impl": "cycle_probe",
+         "in": {"in": "text.vi", "feedback": "text.loop"},  # <- feeds itself
+         "out": "text.loop"},
         {"name": "sink", "impl": "jsonl",
          "in": {"corrected": "text.corrected"}},
     ]
@@ -220,11 +263,11 @@ def test_an_out_list_can_skip_a_port_with_underscore():
     ["_", "text.corrected"] must wire only the corrected port; the translator
     simply publishes nothing on text_out.
     """
-    nodes = full_pipeline()
-    nodes[5]["out"] = ["_", "text.corrected"]
+    nodes = [n for n in full_pipeline() if n["name"] != "fix"]
     # vi now publishes text.corrected, so it must stop reading it (self-cycle):
-    nodes[5]["in"] = "text.raw"
-    nodes[6]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
+    nodes[4]["in"] = "text.raw"
+    nodes[4]["out"] = ["_", "text.corrected"]
+    nodes[5]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
     cfg = cfg_from(nodes)
     assert cfg.node("vi").outputs == {"corrected": "text.corrected"}
     assert "text.out" not in cfg.node("vi").out_topics
@@ -289,11 +332,11 @@ def test_a_source_with_no_wired_output_is_an_error():
 async def test_a_skipped_out_port_publishes_nothing():
     """repair_mode builds frames for both ports every call; the skipped port's
     frames are dropped before the bus sees them."""
-    nodes = full_pipeline()
-    nodes[5]["out"] = ["_", "text.corrected"]
-    nodes[5]["in"] = "text.raw"  # vi publishes text.corrected now; reading it = cycle
-    nodes[5]["repair_mode"] = True
-    nodes[6]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
+    nodes = [n for n in full_pipeline() if n["name"] != "fix"]
+    nodes[4]["out"] = ["_", "text.corrected"]
+    nodes[4]["in"] = "text.raw"  # vi publishes text.corrected now; reading it = cycle
+    nodes[4]["repair_mode"] = True
+    nodes[5]["in"] = {"raw": "text.raw", "corrected": "text.corrected"}
     graph = Graph(cfg_from(nodes))
     await graph.run(timeout=20)
     assert graph.metrics.counts.get("en", 0) > 0  # corrected English landed
@@ -376,6 +419,49 @@ async def test_streaming_transform_can_emit_after_its_input_stream_ends(monkeypa
     assert graph.metrics.stage_counts["asr"] == 1
 
 
+async def test_multi_output_stream_routes_tuples_to_their_ports(monkeypatch):
+    """A streaming transform with several outputs must yield (port, payload) tuples;
+    each tuple is routed to the topic bound for that port."""
+    from lmls.core.registry import REGISTRY
+
+    monkeypatch.setitem(REGISTRY, "multi_stream", f"{__name__}:MultiOutStreamProbe")
+    nodes = [
+        {"name": "src", "impl": "wav", "out": "audio.raw",
+         "path": WAV, "realtime": False},
+        {"name": "asr", "impl": "multi_stream", "in": "audio.raw",
+         "out": {"text": "text.raw", "side": "text.side"}},
+        {"name": "sink", "impl": "collect",
+         "in": {"raw": "text.raw", "translated_secondary": "text.side"}},
+    ]
+    graph = Graph(cfg_from(nodes))
+    await graph.run(timeout=20)
+
+    collector = next(n.stage for n in graph.nodes if n.config.impl == "collect")
+    main = [e for e in collector.events if e.text.startswith("main ")]
+    side = [e for e in collector.events if e.text == "side"]
+    assert len(main) == 1 and len(side) == 1
+
+
+@pytest.mark.parametrize("bad", ["dict", "bare", "undeclared"])
+async def test_multi_output_stream_rejects_non_tuple_yields(monkeypatch, bad):
+    """dict yields, bare payloads and undeclared port names are convention errors,
+    not silent misrouting."""
+    from lmls.core.registry import REGISTRY
+
+    monkeypatch.setitem(REGISTRY, "multi_stream", f"{__name__}:MultiOutStreamProbe")
+    nodes = [
+        {"name": "src", "impl": "wav", "out": "audio.raw",
+         "path": WAV, "realtime": False},
+        {"name": "asr", "impl": "multi_stream", "in": "audio.raw",
+         "out": {"text": "text.raw", "side": "text.side"}},
+        {"name": "sink", "impl": "collect", "in": {"raw": "text.raw"}},
+    ]
+    graph = Graph(cfg_from(nodes))
+    next(n.stage for n in graph.nodes if n.config.name == "asr").bad = bad
+    with pytest.raises(GraphError, match="process_stream"):
+        await graph.run(timeout=20)
+
+
 # -- fan-out -----------------------------------------------------------------
 
 
@@ -436,15 +522,15 @@ async def test_a_slow_consumer_does_not_delay_a_fast_one_in_a_real_graph():
     real_translate = translator.stage.process
     real_process = sink.stage.process
 
-    async def slow_process(frame):
+    async def slow_process(port, frame):
         await asyncio.sleep(0.25)
         order.append(f"translate:{frame.segment_id}")
-        return await real_process(frame)
+        return await real_process(port, frame)
 
-    async def fast_emit(frame):
+    async def fast_emit(port, frame):
         if frame.lang == "en":
             order.append(f"display:{frame.segment_id}")
-        return await real_process(frame)
+        return await real_process(port, frame)
 
     translator.stage.process = slow_process  # type: ignore[method-assign]
     sink.stage.process = fast_emit  # type: ignore[method-assign]

@@ -98,7 +98,7 @@ class MockTranscriber(Module):
             time.sleep(self.delay_ms / 1000)
         return self._next_line(is_final)
 
-    async def process(self, utterance: Utterance) -> list[TextFrame]:
+    async def process(self, port: str, utterance: Utterance) -> list[TextFrame]:
         loop = asyncio.get_running_loop()
         text = await loop.run_in_executor(
             None, self._transcribe_pcm, utterance.pcm, utterance.is_final

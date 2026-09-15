@@ -230,7 +230,7 @@ async def _warm(graph: Graph) -> float:
             # so a silent probe would never reach Whisper and would not warm it.
             now = time.time()
             await stage.process(
-                Utterance("_warmup", silence, now - 1.0, now, is_final=True)
+                "utterance", Utterance("_warmup", silence, now - 1.0, now, is_final=True)
             )
         elif TextFrame in in_types and cls.outputs:
             from dataclasses import replace
@@ -242,10 +242,10 @@ async def _warm(graph: Graph) -> float:
                     Lineage.new(segment_id="_warmup"), t_audio_end=time.time()
                 ),
             )
-            await stage.process(probe)
+            await stage.process("text", probe)
         elif AudioFrame in in_types and AudioFrame in set(cls.outputs.values()):
             frame = AudioFrame(np.zeros(320, dtype=np.float32), SAMPLE_RATE, 0)
-            await loop.run_in_executor(None, stage.process, frame)
+            await loop.run_in_executor(None, stage.process, "audio", frame)
     return time.perf_counter() - t0
 
 

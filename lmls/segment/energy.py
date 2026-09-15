@@ -116,7 +116,7 @@ class EnergySegmenter(Module):
         rest = {k: v for k, v in kwargs.items() if k not in timing_keys}
         self._inner = _EnergySegmenterImpl(config, **rest)
 
-    def process(self, frame: AudioFrame) -> list[Utterance]:
+    def process(self, port: str, frame: AudioFrame) -> list[Utterance]:
         return list(self._inner.push(frame))
 
     def drain(self) -> list[Utterance]:

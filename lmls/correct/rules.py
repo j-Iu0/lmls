@@ -104,7 +104,7 @@ class RuleCorrector(Module):
                 text += "."
         return text, changes
 
-    async def process(self, frame: TextFrame) -> TextFrame:
+    async def process(self, port: str, frame: TextFrame) -> TextFrame:
         text, changes = self.apply(frame.text)
         # Same lineage (the bus stamps the revision); new text, bookkeeping meta.
         return replace(

@@ -110,7 +110,7 @@ class CloudLlmTranslator(Module):
         return (None, str(data["translation"]).strip()) if data else (None, "")
 
     async def process(
-        self, frame: TextFrame
+        self, port: str, frame: TextFrame
     ) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.translate_partials:
             return None

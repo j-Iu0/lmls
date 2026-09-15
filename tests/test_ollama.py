@@ -70,7 +70,7 @@ async def test_translator_is_faithful_and_single_port():
     job is the fused stage's (see the fused tests below)."""
     translator = build("ollama_translator", name="vi", target="vi")
     translator._engine = StubEngine({"translation": "Xin chào các bạn."})
-    produced = await translator.process(_frame("hello everyone"))
+    produced = await translator.process("text", _frame("hello everyone"))
     assert isinstance(produced, TextFrame)
     assert produced.lang == "vi"
     assert produced.meta["source_text"] == "hello everyone"
@@ -80,14 +80,14 @@ async def test_translator_is_faithful_and_single_port():
 async def test_partials_are_not_translated():
     translator = build("ollama_translator", name="vi", target="vi")
     translator._engine = StubEngine({"translation": "churn"})
-    assert await translator.process(_frame("Hel", is_final=False)) is None
+    assert await translator.process("text", _frame("Hel", is_final=False)) is None
 
 
 async def test_unusable_model_output_yields_no_translation():
     """A failed call degrades to no translation; the English line stays on screen."""
     translator = build("ollama_translator", name="vi", target="vi")
     translator._engine = StubEngine(None)
-    assert await translator.process(_frame("hello everyone")) is None
+    assert await translator.process("text", _frame("hello everyone")) is None
 
 
 # -- corrector adapter --------------------------------------------------------
@@ -99,7 +99,7 @@ async def test_corrector_fixes_and_reports_the_change():
         {"corrected": "gradient descent uses back propagation on the data set"}
     )
     original = "grade ee ent dissent uses back propagation on the data set"
-    out = await corrector.process(_frame(original))
+    out = await corrector.process("text", _frame(original))
     assert out.meta["corrected"] is True
     assert out.meta["original"] == original
     assert out.lineage is not None
@@ -117,9 +117,9 @@ async def test_corrector_maintains_context_internally():
             return {"corrected": "fixed"}
 
     corrector._engine = RecordingStub(None)
-    await corrector.process(_frame("line one"))
-    await corrector.process(_frame("line two", is_final=False))
-    await corrector.process(_frame("line three"))
+    await corrector.process("text", _frame("line one"))
+    await corrector.process("text", _frame("line two", is_final=False))
+    await corrector.process("text", _frame("line three"))
 
     assert len(seen_contexts) == 2, "the partial must not trigger a model call"
     assert seen_contexts[0] == []
@@ -132,7 +132,7 @@ async def test_corrector_rejects_an_implausible_rewrite():
         {"corrected": "The lecture will resume after a short break."}
     )
     original = "grade ee ent dissent uses back propagation"
-    out = await corrector.process(_frame(original))
+    out = await corrector.process("text", _frame(original))
     assert out.text == original, "the original must be kept"
     assert out.meta["corrected"] is False
     assert corrector.rejected == 1
@@ -141,7 +141,7 @@ async def test_corrector_rejects_an_implausible_rewrite():
 async def test_corrector_passes_partials_through_untouched():
     corrector = build("ollama_corrector", name="fix")
     corrector._engine = StubEngine({"corrected": "invented ending"})
-    out = await corrector.process(_frame("half a sent", is_final=False))
+    out = await corrector.process("text", _frame("half a sent", is_final=False))
     assert out.text == "half a sent"
     assert out.meta["skipped"] == "partial"
 
@@ -163,7 +163,7 @@ async def test_fused_stage_returns_both_ports_from_one_call():
         {"corrected": "Gradient descent uses backpropagation.",
          "translation": "Gradient descent sử dụng backpropagation."}
     )
-    produced = await fused.process(_frame("grade ee ent dissent"))
+    produced = await fused.process("text", _frame("grade ee ent dissent"))
 
     assert isinstance(produced, dict)
     assert set(produced) == {"corrected", "translated"}
@@ -180,14 +180,14 @@ async def test_fused_stage_returns_both_ports_from_one_call():
 async def test_fused_stage_skips_partials():
     fused = build("fused_ollama", name="fix_translate")
     fused._engine = StubEngine({"corrected": "x", "translation": "y"})
-    assert await fused.process(_frame("Hel", is_final=False)) is None
+    assert await fused.process("text", _frame("Hel", is_final=False)) is None
 
 
 async def test_fused_stage_degrades_to_the_original_english():
     """A failed call keeps the raw line as the correction and emits no translation."""
     fused = build("fused_ollama", name="fix_translate", target="vi")
     fused._engine = StubEngine(None)
-    produced = await fused.process(_frame("hello everyone"))
+    produced = await fused.process("text", _frame("hello everyone"))
     assert isinstance(produced, dict)
     assert set(produced) == {"corrected"}
     assert produced["corrected"].text == "hello everyone"
@@ -201,7 +201,7 @@ async def test_fused_stage_rejects_an_implausible_rewrite():
          "translation": "Buổi học sẽ tạm dừng sau một giờ giải lao ngắn."}
     )
     original = "grade ee ent dissent uses back propagation"
-    produced = await fused.process(_frame(original))
+    produced = await fused.process("text", _frame(original))
     assert produced["corrected"].text == original, "the original must be kept"
     assert fused.rejected == 1
     assert produced["translated"].meta["source_text"] == original
@@ -218,9 +218,9 @@ async def test_fused_stage_maintains_context_internally():
             return {"corrected": "fixed", "translation": "dịch"}
 
     fused._engine = RecordingStub(None)
-    await fused.process(_frame("line one"))
-    await fused.process(_frame("line two", is_final=False))
-    await fused.process(_frame("line three"))
+    await fused.process("text", _frame("line one"))
+    await fused.process("text", _frame("line two", is_final=False))
+    await fused.process("text", _frame("line three"))
 
     assert len(seen_contexts) == 2, "the partial must not trigger a model call"
     assert seen_contexts[0] == []
@@ -299,6 +299,7 @@ async def test_live_translation_round_trip():
     translator = build("ollama_translator", name="vi", target="vi", timeout=30)
     await translator.start()
     produced = await translator.process(
+            "text",
         _frame("Gradient descent adjusts every weight to reduce the loss.")
     )
     assert isinstance(produced, TextFrame)
@@ -311,6 +312,7 @@ async def test_live_correction_round_trip():
     corrector = build("ollama_corrector", name="fix", timeout=30)
     await corrector.start()
     out = await corrector.process(
+            "text",
         _frame("we use gradiant dissent to train the model")
     )
     assert "gradient descent" in out.text.lower()
@@ -321,6 +323,7 @@ async def test_live_fused_round_trip():
     fused = build("fused_ollama", name="fix_translate", target="vi", timeout=30)
     await fused.start()
     produced = await fused.process(
+            "text",
         _frame("we use gradiant dissent to train the model")
     )
     assert isinstance(produced, dict)

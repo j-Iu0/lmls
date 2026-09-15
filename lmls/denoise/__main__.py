@@ -66,7 +66,7 @@ def run(
 
     if raw:
         for frame in read_frames():
-            write_frame(denoiser.process(frame))
+            write_frame(denoiser.process("audio", frame))
         return
 
     if infile is None:
@@ -112,7 +112,7 @@ def _stream_array(denoiser, pcm: np.ndarray) -> np.ndarray:
         block = pcm[i : i + FRAME_SAMPLES]
         if len(block) < FRAME_SAMPLES:
             block = np.pad(block, (0, FRAME_SAMPLES - len(block)))
-        chunks.append(denoiser.process(AudioFrame(block, SAMPLE_RATE, i)).pcm)
+        chunks.append(denoiser.process("audio", AudioFrame(block, SAMPLE_RATE, i)).pcm)
     return np.concatenate(chunks)[: len(pcm)] if chunks else pcm
 
 

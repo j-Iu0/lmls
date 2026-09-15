@@ -117,7 +117,7 @@ def _result(
 
 async def _frames():
     for seq in range(2):
-        yield AudioFrame(
+        yield "audio", AudioFrame(
             pcm=np.full(FRAME_SAMPLES, 0.25 * (seq + 1), dtype=np.float32),
             sample_rate=SAMPLE_RATE,
             seq=seq,

@@ -9,8 +9,9 @@ Item {
     readonly property bool connected: socket.status === WebSocket.Open
     readonly property string sourceText: display.source
     readonly property string translationText: display.translation
+    readonly property string translationLang: display.translationLang
     property var store: Subtitles.createStore(options)
-    property var display: ({segmentId: "", source: "", translation: ""})
+    property var display: ({segmentId: "", source: "", translation: "", translationLang: ""})
     property int rejectedMessages: 0
     property string lastError: ""
     property int retryDelay: 500
@@ -64,8 +65,8 @@ Item {
                 var event = JSON.parse(message);
                 if (!root.store.receive(event, Date.now())) {
                     root.rejectedMessages++;
-                    if (event && event.type === "subtitle" && !event.topic)
-                        root.lastError = "Subtitle event lacks topic; update the lmls backend.";
+                if (event && event.type === "subtitle" && !event.port)
+                    root.lastError = "Subtitle event lacks port; update the lmls backend.";
                 }
                 root.refresh();
                 root.history = root.store.history();

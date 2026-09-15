@@ -92,7 +92,7 @@ class CloudLlmCorrector(Module):
             return text, False
         return corrected, corrected != text
 
-    async def process(self, frame: TextFrame) -> TextFrame:
+    async def process(self, port: str, frame: TextFrame) -> TextFrame:
         if not frame.is_final and not self.correct_partials:
             return replace(frame, meta={**frame.meta, "corrected": False})
         text, changed = await asyncio.get_running_loop().run_in_executor(

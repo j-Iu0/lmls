@@ -148,7 +148,7 @@ class MlxWhisperTranscriber(Module):
             return ""
         return text
 
-    async def process(self, utterance: Utterance) -> list[TextFrame]:
+    async def process(self, port: str, utterance: Utterance) -> list[TextFrame]:
         # The decode holds the GIL only in bursts but blocks for hundreds of
         # milliseconds; off the event loop is the difference between a stuttering
         # pipeline and a smooth one.

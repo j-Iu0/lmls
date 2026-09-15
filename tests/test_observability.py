@@ -46,7 +46,7 @@ class Source(Module):
 class Transform(Source):
     inputs = {"in": TextFrame, "other": TextFrame}
 
-    def process(self, frame):
+    def process(self, port, frame):
         return [replace(frame, text=frame.text + "!"), replace(frame, text="again")]
 
 
@@ -58,7 +58,7 @@ class Sink(Source):
         super().__init__()
         self.received = []
 
-    async def process(self, frame):
+    async def process(self, port, frame):
         self.received.append(frame)
 
 
@@ -74,7 +74,7 @@ class Segmenter(Source):
     inputs = {"in": AudioFrame}
     outputs = {"out": Utterance}
 
-    def process(self, frame):
+    def process(self, port, frame):
         partial = Utterance("u0001", frame.pcm, 1.0, 2.0, is_final=False)
         return [partial, replace(partial, is_final=True)]
 
@@ -83,15 +83,15 @@ class Segmenter(Source):
 
 
 class UtterancePass(Source):
-    inputs = {"in": Utterance}
+    inputs = {"in": Utterance, "other": Utterance}
     outputs = {"out": Utterance}
 
-    def process(self, frame):
+    def process(self, port, frame):
         return frame
 
 
 class UtteranceSink(Sink):
-    inputs = {"in": Utterance}
+    inputs = {"in": Utterance, "other": Utterance}
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ async def test_multi_input_failure_joins_sibling_pumps_before_stop(make_graph, t
     stage = graph.nodes[2].stage
     waiting, cancelled = asyncio.Event(), asyncio.Event()
 
-    async def process(frame):
+    async def process(port, frame):
         if frame.text == "fail":
             raise RuntimeError("process failed")
         waiting.set()
@@ -276,7 +276,7 @@ async def test_cancel_full_queues_closes_source_and_leaves_no_pumps(make_graph):
     graph.nodes[1].stage.frames *= 1000
     entered = asyncio.Event()
 
-    async def block(frame):
+    async def block(port, frame):
         entered.set()
         await asyncio.Event().wait()
 
@@ -284,7 +284,7 @@ async def test_cancel_full_queues_closes_source_and_leaves_no_pumps(make_graph):
     before = asyncio.all_tasks()
     task = asyncio.create_task(graph.run())
     await asyncio.wait_for(entered.wait(), 1)
-    assert any(n.subscriptions[0].queue.full() for n in graph.nodes if n.subscriptions)
+    assert any(n.subscriptions[0][1].queue.full() for n in graph.nodes if n.subscriptions)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, 1)
@@ -354,7 +354,7 @@ async def test_sync_processing_cancel_joins_worker_before_stage_stop(make_graph)
     loop = asyncio.get_running_loop()
     stage = graph.nodes[1].stage
 
-    def process(frame):
+    def process(port, frame):
         loop.call_soon_threadsafe(entered.set)
         assert release.wait(2)
         finished.set()
@@ -418,7 +418,7 @@ async def test_executor_queue_wait_is_not_processing_time(make_graph, monkeypatc
 async def test_drain_and_none_results_do_not_inflate_processing_count(make_graph):
     graph = make_graph()
     stage = graph.nodes[1].stage
-    stage.process = lambda frame: None
+    stage.process = lambda port, frame: None
     stage.drain = lambda: [TextFrame("flushed") for _ in range(3)]
     await graph.run()
     assert graph.metrics.stage_counts["transform"] == 1
@@ -430,7 +430,7 @@ async def test_drain_and_none_results_do_not_inflate_processing_count(make_graph
 async def test_runtime_timeout_only_swallows_graph_deadline(make_graph, own_timeout):
     graph = make_graph()
 
-    async def process(frame):
+    async def process(port, frame):
         if own_timeout:
             raise TimeoutError("service timed out")
         await asyncio.Event().wait()
@@ -529,12 +529,12 @@ async def test_in_flight_processing_multi_input_and_terminal_cleanup(make_graph,
             raise RuntimeError("processing failed")
         return [] if outcome == "empty" else None
 
-    async def async_process(frame):
+    async def async_process(port, frame):
         entered.put_nowait(None)
         await async_release.wait()
         return result()
 
-    def sync_process(frame):
+    def sync_process(port, frame):
         loop.call_soon_threadsafe(entered.put_nowait, None)
         assert sync_release.wait(2)
         return result()
@@ -674,9 +674,9 @@ async def test_direct_source_namespaces_are_stable_and_preserve_other_fields(
     source_impl = "UtteranceSource" if payload_type == "utterance" else "Source"
     sink_impl = "UtteranceSink" if payload_type == "utterance" else "Sink"
     graph = Graph(GraphConfig([
-        NodeConfig("source_a", source_impl, outputs={"out": "raw"}),
-        NodeConfig("source_b", source_impl, outputs={"out": "raw"}),
-        NodeConfig("sink", sink_impl, inputs={"in": "raw"}),
+        NodeConfig("source_a", source_impl, outputs={"out": "raw_a"}),
+        NodeConfig("source_b", source_impl, outputs={"out": "raw_b"}),
+        NodeConfig("sink", sink_impl, inputs={"in": "raw_a", "other": "raw_b"}),
     ]), namespace_segments=namespace)
     if payload_type == "utterance":
         partial = Utterance("u0001", np.zeros(1, dtype=np.float32), 1.0, 2.0, False)
@@ -718,6 +718,6 @@ async def test_changed_utterance_id_is_a_new_origin(make_graph):
         NodeConfig("sink", "UtteranceSink", inputs={"in": "split"}),
     ]), namespace_segments=True)
     graph.nodes[0].stage.frames = [Utterance("u0001", np.zeros(1), 1.0, 2.0)]
-    graph.nodes[1].stage.process = lambda frame: replace(frame, id="child")
+    graph.nodes[1].stage.process = lambda port, frame: replace(frame, id="child")
     await graph.run()
     assert json.loads(graph.nodes[-1].stage.received[0].id) == ["split", "child"]

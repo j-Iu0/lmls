@@ -3,30 +3,38 @@ function createStore(options) {
     var blocks = new Map();
     var current = null;
 
-    // The event chosen by language and topic priority; its text and its own
-    // end-to-end delay are displayed together.
-    function line(block, language, topics) {
+    // The event chosen by input port and language; its text and its own end-to-end
+    // delay are displayed together. The source line requires the configured source
+    // language; the translated line accepts any language (a null language) and the
+    // displayed language badge reports which one arrived.
+    function line(block, language, ports) {
         var candidates = Array.from(block.lines.values()).filter(function (event) {
-            return event.lang === language;
+            return ports.indexOf(event.port) >= 0
+                && (language === null || event.lang === language);
         });
         candidates.sort(function (a, b) {
-            function rank(topic) {
-                var index = topics.indexOf(topic);
-                return index < 0 ? topics.length : index;
+            function rank(port) {
+                var index = ports.indexOf(port);
+                return index < 0 ? ports.length : index;
             }
-            return rank(a.topic) - rank(b.topic);
+            return rank(a.port) - rank(b.port);
         });
         return candidates[0] || null;
     }
 
-    function text(block, language, topics) {
-        var chosen = block ? line(block, language, topics) : null;
+    function text(block, language, ports) {
+        var chosen = block ? line(block, language, ports) : null;
         return chosen ? chosen.text : "";
     }
 
-    function delay(block, language, topics) {
-        var chosen = block ? line(block, language, topics) : null;
+    function delay(block, language, ports) {
+        var chosen = block ? line(block, language, ports) : null;
         return chosen && Number.isFinite(chosen.end_to_end_ms) ? chosen.end_to_end_ms : null;
+    }
+
+    function languageOf(block, language, ports) {
+        var chosen = block ? line(block, language, ports) : null;
+        return chosen ? chosen.lang : "";
     }
 
     return {
@@ -34,10 +42,11 @@ function createStore(options) {
             return Array.from(blocks.values()).sort(function (a, b) { return a.time - b.time; })
                 .map(function (block) {
                     return {segmentId: block.id,
-                        source: text(block, options.sourceLanguage, options.sourceTopics),
-                    sourceDelay: delay(block, options.sourceLanguage, options.sourceTopics),
-                    translation: text(block, options.targetLanguage, options.translationTopics),
-                    translationDelay: delay(block, options.targetLanguage, options.translationTopics)};
+                        source: text(block, options.sourceLanguage, options.sourcePorts),
+                    sourceDelay: delay(block, options.sourceLanguage, options.sourcePorts),
+                    translation: text(block, null, options.translationPorts),
+                    translationLang: languageOf(block, null, options.translationPorts),
+                    translationDelay: delay(block, null, options.translationPorts)};
                 });
         },
         size: function () { return blocks.size; },
@@ -48,7 +57,7 @@ function createStore(options) {
         receive: function (event, now) {
             if (!event || event.type !== "subtitle"
                     || typeof event.segment_id !== "string" || !event.segment_id
-                    || typeof event.topic !== "string" || !event.topic
+                    || typeof event.port !== "string" || !event.port
                     || typeof event.lang !== "string" || !event.lang
                     || typeof event.text !== "string"
                     || !Number.isInteger(event.revision) || event.revision < 0)
@@ -57,8 +66,6 @@ function createStore(options) {
                 if (event[field] !== undefined && (!Number.isFinite(event[field]) || event[field] < 0))
                     return false;
             }
-            if (event.lang !== options.sourceLanguage && event.lang !== options.targetLanguage)
-                return true;
             var block = blocks.get(event.segment_id);
             if (!block) {
                 block = {id: event.segment_id, lines: new Map(),
@@ -74,15 +81,15 @@ function createStore(options) {
                     blocks.delete(oldest.id);
                 }
             }
-            var key = JSON.stringify([event.topic, event.lang]);
+            var key = JSON.stringify([event.port, event.lang]);
             var previous = block.lines.get(key);
             if (previous && event.revision < previous.revision)
                 return false;
-            var before = [text(block, options.sourceLanguage, options.sourceTopics),
-                text(block, options.targetLanguage, options.translationTopics)].join("\n");
+            var before = [text(block, options.sourceLanguage, options.sourcePorts),
+                text(block, null, options.translationPorts)].join("\n");
             block.lines.set(key, event);
-            var after = [text(block, options.sourceLanguage, options.sourceTopics),
-                text(block, options.targetLanguage, options.translationTopics)].join("\n");
+            var after = [text(block, options.sourceLanguage, options.sourcePorts),
+                text(block, null, options.translationPorts)].join("\n");
             if (before !== after)
                 block.updatedAt = Math.max(block.updatedAt,
                     event.t_emit ? Math.min(now, event.t_emit * 1000) : now);
@@ -93,10 +100,11 @@ function createStore(options) {
                 ? current : null;
             return {
                 segmentId: active ? active.id : "",
-                source: text(active, options.sourceLanguage, options.sourceTopics),
-                sourceDelay: delay(active, options.sourceLanguage, options.sourceTopics),
-                translation: text(active, options.targetLanguage, options.translationTopics),
-                translationDelay: delay(active, options.targetLanguage, options.translationTopics)
+                source: text(active, options.sourceLanguage, options.sourcePorts),
+                sourceDelay: delay(active, options.sourceLanguage, options.sourcePorts),
+                translation: text(active, null, options.translationPorts),
+                translationLang: languageOf(active, null, options.translationPorts),
+                translationDelay: delay(active, null, options.translationPorts)
             };
         }
     };

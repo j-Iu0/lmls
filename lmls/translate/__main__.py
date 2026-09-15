@@ -102,7 +102,7 @@ def run(
 
         async def handle(frame: TextFrame) -> None:
             t0 = time.perf_counter()
-            produced = await translator.process(frame)
+            produced = await translator.process("text", frame)
             elapsed = (time.perf_counter() - t0) * 1000
             if produced is None:
                 return
@@ -164,9 +164,9 @@ def compare(
             typer.secho(f"\nASR : {line}", fg=typer.colors.YELLOW)
 
             t0 = time.perf_counter()
-            corrected = await corrector.process(frame)
+            corrected = await corrector.process("text", frame)
             split = (time.perf_counter() - t0) * 1000
-            out = await faithful.process(corrected)
+            out = await faithful.process("text", corrected)
             split_ms.append(split)
             typer.echo(f"  split  EN {corrected.text}")
             for e in _frames(out):
@@ -174,7 +174,7 @@ def compare(
             typer.secho(f"         {split:.0f} ms (2 calls)", dim=True)
 
             t0 = time.perf_counter()
-            out = await repairing.process(frame)
+            out = await repairing.process("text", frame)
             fused = (time.perf_counter() - t0) * 1000
             fused_ms.append(fused)
             for e in _frames(out):

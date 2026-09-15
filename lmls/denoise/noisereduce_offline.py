@@ -54,7 +54,7 @@ class NoiseReduceDenoiser(Module):
     def latency_ms(self) -> float:
         return float(self.chunk_ms)
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, port: str, frame: AudioFrame) -> AudioFrame:
         self._in_buf = np.concatenate([self._in_buf, frame.pcm])
         while len(self._in_buf) >= self._chunk:
             block, self._in_buf = self._in_buf[: self._chunk], self._in_buf[self._chunk :]

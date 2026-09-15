@@ -6,10 +6,9 @@ QtObject {
     // Empty selects the first connected output. Use an output name from `niri msg outputs`.
     property string monitor: Quickshell.env("LMLS_MONITOR") || ""
     property string sourceLanguage: "en"
-    property string targetLanguage: Quickshell.env("LMLS_LANGUAGE") || "vi"
-    // Highest priority first. Names are wiring choices, not built-in stage names.
-    property var sourceTopics: ["text.corrected", "text.raw"]
-    property var translationTopics: ["text.out", "text.vi", "text.zh"]
+    // Input-port names of the subtitle sink; highest priority first.
+    property var sourcePorts: ["corrected", "raw"]
+    property var translationPorts: ["translated"]
     property int timeoutMs: 8000 // Zero keeps the latest caption until cleared.
     property int historyLimit: 40
     property int initialWidth: 900

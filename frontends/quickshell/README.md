@@ -2,7 +2,7 @@
 
 A standalone subtitle frontend for `lmls`. It connects to the pipeline's WebSocket
 sink and shows subtitles in a normal floating window as a scrolling transcript:
-each segment lists the source line above its selected translation, each labelled
+each segment lists the source line above its translated line, each labelled
 with that line's end-to-end pipeline delay, with the newest segment at the bottom.
 Raw transcription appears immediately; corrections and translations update their
 segment in place. The list follows new segments as they arrive — unless you have
@@ -65,6 +65,8 @@ expired text stays hidden.
 - `Source` and `Translation` toggle the two lines of every segment independently.
 - Each line carries a small badge with the end-to-end delay (`end_to_end_ms`) of
   the event that line was rendered from; lines without a reported delay show none.
+  The translation line also shows a badge with the language of the event it
+  rendered from.
 - The list autoscrolls to the newest segment while you are at the bottom; scroll
   up to read earlier segments and the view stays there until you scroll back
   down (scrolling to the bottom resumes autoscroll).
@@ -74,34 +76,36 @@ expired text stays hidden.
 ## Configure
 
 Edit `Settings.qml`; Quickshell reloads changes. Environment variables override the
-connection, monitor, and target language when starting the frontend:
+connection and monitor when starting the frontend:
 
 ```bash
-LMLS_WS_URL=ws://127.0.0.1:8765 LMLS_MONITOR=eDP-1 LMLS_LANGUAGE=vi \
+LMLS_WS_URL=ws://127.0.0.1:8765 LMLS_MONITOR=eDP-1 \
   quickshell --no-duplicate --path frontends/quickshell
 ```
 
 Use `niri msg outputs` to find monitor names. An empty or unavailable monitor name
-falls back to the first connected output. Changing `LMLS_LANGUAGE` only selects
-which received language to display. Configure the backend to generate that
-language as well.
+falls back to the first connected output.
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
-| `sourceLanguage` / `targetLanguage` | `en` / `vi` | Exact language tags to display. |
-| `sourceTopics` | corrected, then raw | Priority list of topic names for the source line. |
-| `translationTopics` | `text.out`, `text.vi`, `text.zh` | Priority list for the selected translation. |
+| `sourceLanguage` | `en` | Exact language tag to display on the source line. |
+| `sourcePorts` | corrected, then raw | Priority list of sink input ports for the source line. |
+| `translationPorts` | `translated` | Sink input ports whose events fill the translated line. |
 | `initialWidth` / `initialHeight` | 900 / 520 | First-show window size, within the 480x260–1600x1000 limits. |
 | `sourceFontSize` / `translationFontSize` | 28 / 32 | Font sizes in logical pixels. |
 | `backgroundOpacity` | 0.78 | Panel backing opacity; 0 shows the desktop through the window. |
 | `timeoutMs` | 8000 | Inactivity timeout; 0 keeps the latest subtitle visible. |
 | `historyLimit` | 40 | Maximum retained segment blocks. |
 
-Topic lists are ordered from highest to lowest priority. Unknown topics have lower
-priority than listed topics, and language selection applies first. For custom
-pipeline wiring, update these lists to match its actual topic names. Revisions are
-compared only within the same `(segment_id, topic, lang)`; revisions from different
-topics are not comparable. Delayed events for an earlier utterance do not replace
+Port lists are ordered from highest to lowest priority, and each event carries the
+name of the sink input port it arrived on (`port` on the wire), never the internal
+topic name -- so pipelines with auto-generated topic names work unmodified. The
+source line displays events on `sourcePorts` in `sourceLanguage`. The translation
+line performs no target-language check: any event on `translationPorts` is displayed
+regardless of its language, next to a badge showing that language. Revisions are
+compared only within the same `(segment_id, port, lang)`; events on different ports
+are not comparable, and same-port events in different languages are ordered by
+arrival. Delayed events for an earlier utterance do not replace
 the newest utterance, ordered using `t_audio_end` (falling back to `t_emit` or
 arrival time when absent). Missing timestamps limit how reliably delayed segments
 can be ordered. The standard backend supplies both timestamps.
@@ -142,10 +146,10 @@ examples; installation does not edit your niri configuration.
 ## Troubleshooting and validation
 
 - No subtitles: inspect `status`. Confirm the backend has a WebSocket sink and
-  produces the selected language.
-- `Subtitle event lacks topic`: restart the backend using this checkout. Older
+  produces the source language, plus some language on the translated topics.
+- `Subtitle event lacks port`: restart the backend using this checkout. Older
   backends omitted provenance; those messages are rejected instead of guessing
-  which revision belongs to which stage.
+  which revision belongs to which stream.
 - Missing `QtWebSockets`: install the Qt 6 WebSockets QML package for your distro.
 - Translucency shows black: your compositor or GPU path may not support
   translucent windows; raise `backgroundOpacity` to 1 for an opaque panel.

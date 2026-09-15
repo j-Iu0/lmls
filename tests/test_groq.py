@@ -114,6 +114,7 @@ async def test_groq_translates_a_final_frame(monkeypatch):
     await translator.start()
     assert translator._api_key is None
     produced = await translator.process(
+            "text",
         TextFrame(text="Hello class", lineage=Lineage.new("segment-1"))
     )
 
@@ -143,6 +144,7 @@ async def test_groq_skips_partial_frames_without_loading_sdk(monkeypatch):
     translator = GroqLlmTranslator(api_key="test-only-value")
 
     produced = await translator.process(
+            "text",
         TextFrame(
             text="Half a sentence",
             is_final=False,
@@ -171,6 +173,7 @@ async def test_groq_failure_keeps_english_as_the_honest_fallback(monkeypatch):
 
     translator = GroqLlmTranslator(api_key="test-only-value")
     produced = await translator.process(
+            "text",
         TextFrame(text="Keep me", lineage=Lineage.new("segment-1"))
     )
 

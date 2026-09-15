@@ -21,6 +21,7 @@ Rectangle {
         // Delays are normalised to numbers (-1 = absent) for stable model roles.
         var rows = history.map(function (row) {
             return {segmentId: row.segmentId, source: row.source, translation: row.translation,
+                translationLang: row.translationLang || "",
                 sourceDelay: typeof row.sourceDelay === "number" ? row.sourceDelay : -1,
                 translationDelay: typeof row.translationDelay === "number" ? row.translationDelay : -1};
         });
@@ -87,6 +88,7 @@ Rectangle {
                 required property string segmentId
                 required property string source
                 required property string translation
+                required property string translationLang
                 required property real sourceDelay
                 required property real translationDelay
                 width: historyList.width - 16
@@ -127,6 +129,16 @@ Rectangle {
                         wrapMode: Text.Wrap
                         color: "#ffe9a6"
                         font.pixelSize: root.translationFontSize
+                    }
+                    Text {
+                        id: translationLangBadge
+                        objectName: "historyTranslationLang"
+                        visible: translationLine.visible && entry.translationLang.length > 0
+                        text: entry.translationLang
+                        textFormat: Text.PlainText
+                        color: "#c9b06a"
+                        font.pixelSize: 13
+                        Layout.alignment: Qt.AlignBottom
                     }
                     Text {
                         objectName: "historyTranslationDelay"

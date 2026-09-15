@@ -27,7 +27,7 @@ class CollectSink(Module):
         self.events: list[TextFrame] = []
         self.latest: dict[tuple[str, str], TextFrame] = {}
 
-    async def process(self, frame: TextFrame) -> None:
+    async def process(self, port: str, frame: TextFrame) -> None:
         self.events.append(frame)
         key = (frame.segment_id, frame.lang)
         current = self.latest.get(key)

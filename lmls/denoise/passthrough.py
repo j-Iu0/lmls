@@ -27,7 +27,7 @@ class PassthroughDenoiser(Module):
     def __init__(self, **_: Any):
         super().__init__()
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, port: str, frame: AudioFrame) -> AudioFrame:
         return frame
 
     def process_array(self, pcm: np.ndarray, sample_rate: int) -> np.ndarray:

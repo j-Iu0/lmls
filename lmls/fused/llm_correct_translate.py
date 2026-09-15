@@ -125,7 +125,7 @@ class FusedLlmStage(Module):
                 corrected = text
         return corrected, translation
 
-    async def process(self, frame: TextFrame) -> dict[str, TextFrame] | None:
+    async def process(self, port: str, frame: TextFrame) -> dict[str, TextFrame] | None:
         if not frame.is_final and not self.handle_partials:
             return None
         corrected, translation = await asyncio.get_running_loop().run_in_executor(

@@ -32,20 +32,21 @@ class Module(ABC):
 
     * ``inputs == {}`` -- a **source**; must implement ``async def run()`` yielding
       payloads for its output port(s).
-    * ``outputs == {}`` -- a **sink**; implements ``async def process(frame) -> None``.
-      A sink that needs provenance may additionally implement
-      ``process_with_topic(frame, topic)``; the graph calls it instead of ``process``.
-      Both sync and async methods are supported. Topic names remain configuration,
-      and the frame itself is unchanged.
-    * both non-empty -- a **transform**; implements ``process`` returning a single
-      payload (1-to-1), a ``dict`` keyed by output port name (required when the
-      module declares multiple outputs), or a ``list`` for the single output port
-      (1-to-list).
+    * ``outputs == {}`` -- a **sink**; implements ``async def process(port, frame)``
+      where ``port`` is the name of the declared input port the frame arrived on.
+      Both sync and async methods are supported.
+    * both non-empty -- a **transform**; implements ``process(port, frame)`` returning
+      a ``dict`` keyed by output port name (required when the module declares multiple
+      outputs), or a single payload or ``list`` of payloads for the module's single
+      output port (1-to-1, 1-to-list).
     * A full-duplex transform may instead implement
-      ``process_stream(input_stream)`` as an async generator.  The graph supplies
-      the node's single input subscription and publishes values whenever the
-      generator yields them.  This is for protocols such as streaming ASR where
-      outputs arrive independently of individual input frames.
+      ``process_stream(input_stream)`` as an async generator.  The graph supplies one
+      merged stream yielding ``(port, frame)`` pairs for every wired input port.  The
+      generator yields outputs in the mirrored convention: ``(port_name, payload)``
+      tuples, or a single payload or ``list`` of payloads when the module declares
+      exactly one output port.  This is for protocols such as streaming ASR where
+      outputs arrive independently of individual input frames, and it works for
+      single- and multi-input modules alike.
     * ``process`` may be a plain ``def``; the runner wraps it in ``run_in_executor``
       automatically. ``run`` must be ``async``.
     * Internal state (LLM context windows, DSP state) lives on the instance, never in
@@ -135,6 +136,7 @@ class Module(ABC):
         through :meth:`process` frame by frame so an implementation only has to provide
         the streaming path.
         """
+        port = next(iter(self.inputs), "audio")
         out = np.empty_like(pcm, dtype=np.float32)
         for i in range(0, len(pcm), FRAME_SAMPLES):
             block = pcm[i : i + FRAME_SAMPLES].astype(np.float32)
@@ -142,11 +144,11 @@ class Module(ABC):
                 padded = np.zeros(FRAME_SAMPLES, dtype=np.float32)
                 padded[: len(block)] = block
                 processed = self.process(
-                    AudioFrame(padded, sample_rate, i)
+                    port, AudioFrame(padded, sample_rate, i)
                 ).pcm
                 out[i : i + len(block)] = processed[: len(block)]
             else:
                 out[i : i + FRAME_SAMPLES] = self.process(
-                    AudioFrame(block, sample_rate, i)
+                    port, AudioFrame(block, sample_rate, i)
                 ).pcm
         return out

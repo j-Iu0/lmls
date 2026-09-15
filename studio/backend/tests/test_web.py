@@ -196,9 +196,9 @@ async def test_empty_asr_result_releases_auto_pause_after_processing_settles(cli
     from lmls.transcribe.mock import MockTranscriber
     started, release = asyncio.Event(), asyncio.Event()
     original = MockTranscriber.process
-    async def empty_final(self, utterance):
+    async def empty_final(self, port, utterance):
         if not utterance.is_final:
-            return await original(self, utterance)
+            return await original(self, port, utterance)
         started.set()
         await release.wait()
         return []
