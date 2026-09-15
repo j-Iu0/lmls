@@ -41,7 +41,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass, replace
-from typing import Any, AsyncIterator, Literal
+from typing import Any, AsyncIterator, Callable, Literal
 
 from .types import AudioFrame, TextFrame, Utterance
 
@@ -72,11 +72,15 @@ class Subscription:
     """One consumer's private queue view of a topic. Async-iterable."""
 
     def __init__(
-        self, topic: str, subscriber: str, maxsize: int, mode: SubscriptionMode
+        self, topic: str, subscriber: str, maxsize: int, mode: SubscriptionMode,
+        accept: Callable[[Any], bool] | None = None,
     ):
         self.topic = topic
         self.subscriber = subscriber
         self.mode: SubscriptionMode = mode
+        #: Optional per-payload admission test, consulted before enqueueing so a
+        #: frame the subscriber would discard anyway never occupies its queue.
+        self.accept = accept
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
         self.stats = SubscriptionStats()
         self._closed = False
@@ -196,11 +200,14 @@ class CatchupSubscription:
         ring: RingBuffer,
         bus: "Bus | None" = None,
         skip_finalized_topic: str | None = None,
+        accept: Callable[[Any], bool] | None = None,
     ):
         self.topic = topic
         self.subscriber = subscriber
         self.mode: SubscriptionMode = "catchup"
         self.skip_finalized_topic = skip_finalized_topic
+        #: Optional per-payload admission test, same contract as Subscription.accept.
+        self.accept = accept
         self._ring = ring
         self._bus = bus
         self._position = ring.total
@@ -243,6 +250,8 @@ class CatchupSubscription:
                 return
 
     def _skip(self, item: Any) -> bool:
+        if self.accept is not None and not self.accept(item):
+            return True
         if not (isinstance(item, Utterance) and self.skip_finalized_topic):
             return False
         if self._bus is None:  # pragma: no cover - bus is always passed by Bus
@@ -343,6 +352,7 @@ class Bus:
         maxsize: int | None = None,
         mode: SubscriptionMode | None = None,
         skip_if_finalized: str | None = None,
+        accept: Callable[[Any], bool] | None = None,
     ) -> Subscription | CatchupSubscription:
         mode = mode or self.default_mode(topic)
         if mode == "catchup":
@@ -353,6 +363,7 @@ class Bus:
                 ring,
                 bus=self,
                 skip_finalized_topic=skip_if_finalized,
+                accept=accept,
             )
         else:
             sub = Subscription(
@@ -364,6 +375,7 @@ class Bus:
                     else default_maxsize(self._topic_types.get(topic))
                 ),
                 mode=mode,
+                accept=accept,
             )
         self._subs.setdefault(topic, []).append(sub)
         st = self._stats.setdefault(topic, TopicStats(mode=mode))
@@ -416,6 +428,8 @@ class Bus:
         for sub in subs:
             if isinstance(sub, CatchupSubscription):
                 continue  # delivery happens via the ring buffer
+            if sub.accept is not None and not sub.accept(payload):
+                continue  # the subscriber would discard this in process anyway
             if sub.mode == "drop":
                 sub._offer(payload)
             else:

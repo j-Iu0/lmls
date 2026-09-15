@@ -117,6 +117,12 @@ class MockTranslator(Module):
             )
         }
 
+    def filter_input(self, port: str, payload: Any) -> bool:
+        """Keep partial revisions out of the queue; process would drop them anyway."""
+        if port == "text_in" and isinstance(payload, TextFrame):
+            return payload.is_final or self.translate_partials
+        return True
+
     def describe(self) -> dict[str, Any]:
         return {
             "module": "MockTranslator",

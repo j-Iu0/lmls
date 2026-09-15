@@ -120,6 +120,18 @@ class Module(ABC):
         """
         return []
 
+    def filter_input(self, port: str, payload: Any) -> bool:
+        """Decide whether ``payload`` may enter this module's queue for ``port``.
+
+        Consulted by the bus *before* enqueueing, so a frame this module would discard
+        in ``process`` anyway never occupies its queue, never applies backpressure, and
+        never shows up as backlog. Returning False is not an error and is not counted
+        as a drop: other subscribers of the topic still receive the payload, and the
+        bus's revision/finalisation bookkeeping is unaffected. The default accepts
+        everything.
+        """
+        return True
+
     def describe(self) -> dict[str, Any]:
         """Short dict used by ``lmls graph`` and by the bench report."""
         return {

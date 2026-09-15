@@ -466,18 +466,37 @@ async def test_multi_output_stream_rejects_non_tuple_yields(monkeypatch, bad):
 
 
 async def test_one_topic_feeds_several_consumers():
-    """text.corrected is read by the translator AND two sinks, each independently."""
+    """text.corrected is read by the translator AND two sinks, each independently.
+    The translator only admits final frames into its queue; the sinks see every
+    revision."""
     nodes = full_pipeline()
     nodes.append({"name": "sink2", "impl": "jsonl",
                   "in": {"corrected": "text.corrected"}})
     graph = Graph(cfg_from(nodes))
-    assert sorted(graph.bus.subscribers_of("text.corrected")) == [
-        "sink", "sink2", "vi"
-    ]
+    probe = graph.bus.subscribe("text.corrected", "probe")
     await graph.run(timeout=20)
+    got = [e async for e in probe]  # consume before reading received counts
     report = graph.bus.report()["text.corrected"]
     counts = {name: s["received"] for name, s in report["subscribers"].items()}
-    assert counts["vi"] == counts["sink"] == counts["sink2"] > 0
+    assert counts["sink"] == counts["sink2"] == counts["probe"] > 0
+
+    finals = [e for e in got if e.is_final]
+    assert len(got) > len(finals) > 0, "the test needs partial revisions to mean it"
+    assert counts["vi"] == len(finals), (
+        "the translator must only receive the final frames it would keep"
+    )
+
+
+async def test_translate_partials_restores_every_revision_to_the_translator():
+    nodes = full_pipeline()
+    nodes[5]["translate_partials"] = True
+    graph = Graph(cfg_from(nodes))
+    probe = graph.bus.subscribe("text.corrected", "probe")
+    await graph.run(timeout=20)
+    [e async for e in probe]  # consume before reading received counts
+    report = graph.bus.report()["text.corrected"]
+    counts = {name: s["received"] for name, s in report["subscribers"].items()}
+    assert counts["vi"] == counts["probe"] > 0
 
 
 async def test_two_translators_share_one_correction_pass():

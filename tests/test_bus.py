@@ -30,9 +30,9 @@ def _text(i: int, segment_id: str | None = None, is_final: bool = True) -> TextF
     )
 
 
-def _utterance(id: str, t_end: float = 1.0) -> Utterance:
+def _utterance(id: str, t_end: float = 1.0, is_final: bool = True) -> Utterance:
     return Utterance(id=id, pcm=np.zeros(1600, dtype=np.float32), t_start=0.0,
-                     t_end=t_end)
+                     t_end=t_end, is_final=is_final)
 
 
 def _bus_with_audio_topic(topic: str = "audio.raw") -> Bus:
@@ -251,6 +251,50 @@ async def test_catchup_ring_never_blocks_the_publisher():
         await bus.publish(ring_topic, _utterance(f"u{i}"))
     assert len(ring._buf) == ring._buf.maxlen
     assert ring.total == ring._buf.maxlen * 2
+
+
+async def test_accept_filter_keeps_rejected_frames_out_of_the_queue():
+    """A subscriber that would discard a frame in process anyway must never have it
+    occupy its queue: the studio renders queue depth as backlog, and a translator
+    stuck on one LLM call would look permanently behind on partials it will drop."""
+    bus = Bus()
+    bus.register_publisher("text.raw")
+    plain = bus.subscribe("text.raw", "display")
+    finals_only = bus.subscribe("text.raw", "translator", accept=lambda f: f.is_final)
+
+    await bus.publish("text.raw", _text(0, is_final=False))
+    await bus.publish("text.raw", _text(1, is_final=False))
+    assert finals_only.depth == 0
+    assert finals_only.stats.dropped == 0, "a filter is admission control, not a drop"
+
+    await bus.publish("text.raw", _text(2, is_final=True))
+    await bus.close("text.raw")
+
+    got = [e.text async for e in finals_only]
+    assert got == ["line 2"]
+    got_plain = [e.text async for e in plain]
+    assert got_plain == ["line 0", "line 1", "line 2"], \
+        "other subscribers of the topic are unaffected"
+
+
+async def test_catchup_subscriber_applies_its_accept_filter():
+    bus = Bus()
+    bus.register_topic_type("utterance.pipe", Utterance)
+    catchup = bus.subscribe("utterance.pipe", "catchup", mode="catchup",
+                            accept=lambda u: u.is_final)
+
+    async def consume() -> list[str]:
+        return [item.id async for item in catchup]
+
+    consumer = asyncio.create_task(consume())
+    await asyncio.sleep(0)  # let the consumer start waiting
+
+    await bus.publish("utterance.pipe", _utterance("u1", is_final=False))
+    await bus.publish("utterance.pipe", _utterance("u2"))
+    await bus.close("utterance.pipe")
+
+    seen = await asyncio.wait_for(consumer, timeout=1.0)
+    assert seen == ["u2"]
 
 
 async def test_report_counts_traffic_per_subscriber():

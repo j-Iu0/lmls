@@ -306,6 +306,10 @@ class Graph:
                 subscriber=nc.name,
                 mode=mode,
                 skip_if_finalized=nc.skip_if_finalized,
+                # Per-port admission test from the module itself: a stage can keep a
+                # frame it would discard in process anyway out of its own queue.
+                accept=lambda payload, _port=port_name, _stage=stage:
+                    _stage.filter_input(_port, payload),
             )
             node.subscriptions.append((port_name, sub))
 
