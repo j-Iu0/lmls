@@ -1,4 +1,4 @@
-"""Translation against a cloud API (Anthropic or OpenAI).
+"""Translation against a cloud API (Anthropic, OpenAI, or Groq).
 
 Mirrors the local translators exactly, including the faithful/repair split, so the
 correction stage is just as optional with a cloud backend as with a local one.
@@ -56,7 +56,7 @@ class CloudLlmTranslator(Module):
         super().__init__()
         self.provider = provider
         self.model = model
-        self.api_key = api_key
+        self._api_key = api_key
         self.target = target
         self.max_tokens = max_tokens
         self.timeout = timeout
@@ -76,9 +76,12 @@ class CloudLlmTranslator(Module):
         )
         try:
             self._engine = get_cloud_engine(
-                self.provider, self.model, api_key=self.api_key,
+                self.provider, self.model, api_key=self._api_key,
                 max_tokens=self.max_tokens, timeout=self.timeout,
             )
+            # The SDK client now owns the credential it needs. Do not retain a second
+            # copy on the public pipeline module for the rest of the session.
+            self._api_key = None
             self._report_startup(StartupPhase.READY)
         except Exception as exc:
             self._report_startup(StartupPhase.FAILED, str(exc))

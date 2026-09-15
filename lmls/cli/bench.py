@@ -150,6 +150,7 @@ _CORRECT_IMPLS = {
 _TRANSLATE_IMPLS = {
     "mock_translator", "mlx_llm_translator", "ollama_translator",
     "cloud_llm_translator",
+    "groq_translator",
 }
 
 

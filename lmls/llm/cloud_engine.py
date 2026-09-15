@@ -1,4 +1,4 @@
-"""Cloud LLM runner (Anthropic or OpenAI), sharing the prompts used locally.
+"""Cloud LLM runner (Anthropic, OpenAI, or Groq), sharing local prompts.
 
 Off by default. It is included so the report's comparison is real rather than
 hypothetical, and because there are situations where it is the better answer: a machine
@@ -33,13 +33,15 @@ log = logging.getLogger("lmls.llm.cloud")
 
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 
 
 class CloudEngine:
     """Args:
-        provider: ``anthropic`` or ``openai``.
+        provider: ``anthropic``, ``openai``, or ``groq``.
         model: provider model id.
-        api_key: taken from ``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` when omitted.
+        api_key: taken from ``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` when omitted
+            for those providers. Groq callers must inject it explicitly.
         timeout: fail fast. A late subtitle is not worth waiting for -- on timeout the
             caller keeps the uncorrected text, which is always a valid display.
     """
@@ -90,8 +92,26 @@ class CloudEngine:
                 )
             self.model = model or DEFAULT_OPENAI_MODEL
             self._client = openai.OpenAI(api_key=key, timeout=timeout)
+        elif self.provider == "groq":
+            try:
+                import groq
+            except ImportError as exc:
+                raise ImportError(
+                    "`.venv/bin/pip install -r requirements-groq.txt`"
+                ) from exc
+            if not api_key or not api_key.strip():
+                raise RuntimeError(
+                    "Groq api_key was not supplied. Configure api_key_file and "
+                    "api_key_name on the Groq translator."
+                )
+            self.model = model or DEFAULT_GROQ_MODEL
+            # Do not let the SDK inspect the process environment: the registry injects
+            # exactly one named value from the configured secret file.
+            self._client = groq.Groq(api_key=api_key, timeout=timeout)
         else:
-            raise ValueError(f"unknown provider {provider!r}; use anthropic or openai")
+            raise ValueError(
+                f"unknown provider {provider!r}; use anthropic, openai, or groq"
+            )
 
     def chat(self, system: str, user: str, max_tokens: int | None = None) -> str:
         t0 = time.perf_counter()
@@ -110,14 +130,28 @@ class CloudEngine:
                 )
                 used = getattr(response.usage, "output_tokens", 0)
             else:
-                response = self._client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=max_tokens or self.max_tokens,
-                    temperature=self.temperature,
-                    messages=[
+                request: dict[str, Any] = {
+                    "model": self.model,
+                    "temperature": self.temperature,
+                    "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
+                }
+                if self.provider == "groq":
+                    # GPT-OSS is a reasoning model, but translation does not benefit
+                    # from a long hidden chain of thought. JSON mode also makes the
+                    # subtitle response deterministic to parse.
+                    request.update(
+                        max_completion_tokens=max_tokens or self.max_tokens,
+                        reasoning_effort="low",
+                        include_reasoning=False,
+                        response_format={"type": "json_object"},
+                    )
+                else:
+                    request["max_tokens"] = max_tokens or self.max_tokens
+                response = self._client.chat.completions.create(
+                    **request,
                 )
                 text = response.choices[0].message.content or ""
                 used = getattr(response.usage, "completion_tokens", 0)
@@ -160,6 +194,11 @@ _CACHE_LOCK = threading.Lock()
 
 def get_cloud_engine(provider: str = "anthropic", model: str | None = None,
                      **kwargs: Any) -> CloudEngine:
+    # A Groq translator retains its engine after startup, so a process-wide cache buys
+    # nothing there and could accidentally reuse a client created with another config's
+    # credential after a hot reload.
+    if provider.lower() == "groq":
+        return CloudEngine(provider, model, **kwargs)
     with _CACHE_LOCK:
         key = (provider, model or "")
         engine = _CACHE.get(key)

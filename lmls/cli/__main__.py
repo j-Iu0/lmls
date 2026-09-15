@@ -79,7 +79,7 @@ _CORRECT_IMPLS = {
 }
 _TRANSLATE_IMPLS = {
     "mock_translator", "mlx_llm_translator", "ollama_translator",
-    "cloud_llm_translator",
+    "cloud_llm_translator", "groq_translator",
 }
 
 
@@ -130,6 +130,9 @@ def _resolve(
                 node.options.pop("device", None)
         if target and (node.impl in _TRANSLATE_IMPLS or node.impl.startswith("fused")):
             node.options["target"] = target
+        if node.impl == "groq_translator":
+            node.options.setdefault("api_key_file", ".env")
+            node.options.setdefault("api_key_name", "GROQ")
         if source and node.impl in _INPUT_IMPLS:
             node.options["url" if node.impl == "ffmpeg" else "device"] = source
             node.options["path"] = source if node.impl == "wav" else node.options.get(

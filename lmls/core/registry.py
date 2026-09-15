@@ -59,6 +59,7 @@ REGISTRY: dict[str, str] = {
     "mlx_llm_translator": "lmls.translate.mlx_llm:MlxLlmTranslator",
     "ollama_translator": "lmls.translate.ollama_llm:OllamaLlmTranslator",
     "cloud_llm_translator": "lmls.translate.cloud_llm:CloudLlmTranslator",
+    "groq_translator": "lmls.translate.groq:GroqLlmTranslator",
     # fused
     "fused_llm": "lmls.fused.llm_correct_translate:FusedLlmStage",
     "fused_ollama": "lmls.fused.ollama_llm:OllamaFusedStage",
@@ -82,6 +83,7 @@ _INSTALL_HINTS = {
     "ollama_translator": "requirements-cpu.txt",
     "cloud_llm_corrector": "requirements-cloud.txt",
     "cloud_llm_translator": "requirements-cloud.txt",
+    "groq_translator": "requirements-groq.txt",
     "deepfilternet": "requirements-extra.txt (pip install deepfilternet)",
     "silero": "requirements-mlx.txt",
 }
@@ -158,7 +160,7 @@ def _resolve_secret_files(cls: type, kwargs: dict[str, Any]) -> dict[str, Any]:
         except ImportError as exc:
             raise MissingDependency(
                 "reading .env secret files needs python-dotenv; "
-                "install requirements-deepgram.txt"
+                "install the optional requirements file for this implementation"
             ) from exc
         value = dotenv_values(path).get(str(key_name))
         if not isinstance(value, str) or not value.strip():

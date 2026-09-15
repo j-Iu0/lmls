@@ -64,7 +64,7 @@ def run(
         None, help="Ollama server URL (impl = ollama_translator)."
     ),
     timeout: Optional[float] = typer.Option(
-        None, help="Per-call HTTP timeout in seconds (impl = ollama_translator)."
+        None, help="Per-call HTTP timeout in seconds for network backends."
     ),
     repair: bool = typer.Option(
         False,
@@ -82,6 +82,9 @@ def run(
         options["host"] = host
     if timeout is not None:
         options["timeout"] = timeout
+    if impl == "groq_translator":
+        options["api_key_file"] = ".env"
+        options["api_key_name"] = "GROQ"
     translator = build(impl, name=impl, **options)
 
     async def go() -> None:

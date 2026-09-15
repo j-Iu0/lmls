@@ -1,0 +1,4 @@
+# Optional GroqCloud translation backend. Subtitle text is sent to Groq only when
+# impl = "groq_translator" is selected.
+groq>=1.7,<2
+python-dotenv>=1,<2

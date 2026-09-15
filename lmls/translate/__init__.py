@@ -6,6 +6,7 @@
     ollama     an Ollama server; the portable backend. Faithful only -- the one-call
                repair-and-translate job is lmls.fused's fused_ollama, its subclass
     cloud_llm  Anthropic/OpenAI
+    groq       low-latency GroqCloud translation, with named .env secret injection
 
 Run standalone::
 

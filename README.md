@@ -356,15 +356,40 @@ Available everywhere: `python -m lmls list`
 | segmenter | `energy`, `silero` |
 | transcriber | `mlx_whisper`, `faster_whisper`, `deepgram`, `mock_transcriber` |
 | corrector | `mlx_llm_corrector`, `ollama_corrector`, `rules`, `cloud_llm_corrector`, `passthrough_corrector` |
-| translator | `mlx_llm_translator`, `ollama_translator`, `cloud_llm_translator`, `mock_translator` |
+| translator | `mlx_llm_translator`, `ollama_translator`, `cloud_llm_translator`, `groq_translator`, `mock_translator` |
 | fused | `fused_llm` (MLX) / `fused_ollama` (Ollama) — corrects and translates in one LLM call |
 | sink | `stdout_pretty`, `jsonl`, `websocket_server`, `collect` |
 
 The **Ollama** adapters are the default wiring: they need `requirements-cpu.txt` (which
 also carries faster-whisper, the default ASR) and a running Ollama server, but no API key.
 The cloud **LLM** adapters (`cloud_llm`, for correction and translation) need
-`requirements-cloud.txt` and an API key. Deepgram transcription is a separate, explicit
-cloud option:
+`requirements-cloud.txt` and an API key.
+
+Groq translation is an explicit cloud backend. It reads only the named `GROQ` entry via
+the registry; the key is not copied into TOML, module metadata, or CLI arguments:
+
+```bash
+pip install -r requirements-groq.txt
+python -m lmls.translate run groq_translator --target vi --text "Hello class"
+```
+
+For a graph node, configure the secret-file reference alongside the normal translator
+ports and options:
+
+```toml
+[[nodes]]
+name = "translate"
+impl = "groq_translator"
+in = { text_in = "text.corrected" }
+out = { text_out = "text.out" }
+target = "vi"
+api_key_file = ".env"
+api_key_name = "GROQ"
+```
+
+Only subtitle text sent through this selected node leaves the machine.
+
+Deepgram transcription is a separate, explicit cloud option:
 
 ```bash
 # .env contains: DEEPGRAM=your-key
